@@ -5,9 +5,10 @@ Role: Team 3 - Server
 
 # Iso Instructions:
 1) ./generate-flags.sh
-2) ./generate-cmakelists.sh
-3) ./change-compiler.sh -c [gcc or clang]
-4) ./build.sh
+2) ./check-env.sh
+3) ./generate-cmakelists.sh
+4) ./change-compiler.sh -c [gcc or clang]
+5) ./build.sh
 
 
 # Run
