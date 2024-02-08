@@ -29,12 +29,6 @@ static void convert_address(const char *address, struct sockaddr_storage *addr);
 
 static int socket_create(int domain, int type, int protocol);
 
-static int socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port);
-
-static void start_listening(int server_fd);
-
-static int socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
-
 static void socket_connect(int sockfd, struct sockaddr_storage *addr, in_port_t port);
 
 static void handle_connection(int client_sockfd);
@@ -45,8 +39,6 @@ static void socket_close(int sockfd);
 #define IP_ADDR_INDEX 1
 #define PORT_INDEX 2
 #define BASE_TEN 10
-// #define BUFFER_SIZE 5000
-#define MAX_CONNECTIONS 1
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -61,7 +53,7 @@ int main(int argc, char *argv[])
     int                     sockfd;
     struct sockaddr_storage addr;
 
-    int bindResult;
+    //    int bindResult;
 
     address  = NULL;
     port_str = NULL;
@@ -69,30 +61,33 @@ int main(int argc, char *argv[])
     parse_arguments(argc, argv, &address, &port_str);
     handle_arguments(address, port_str, &port);
     convert_address(address, &addr);
-    sockfd     = socket_create(addr.ss_family, SOCK_STREAM, 0);
-    bindResult = socket_bind(sockfd, &addr, port);
+    sockfd = socket_create(addr.ss_family, SOCK_STREAM, 0);
+    //    bindResult = socket_bind(sockfd, &addr, port);
 
     setup_signal_handler();
 
-    if(bindResult != -1)
-    {
-        struct sockaddr_storage client_addr;
-        socklen_t               client_addr_len = sizeof(client_addr);
-        int                     client_sockfd;
-        start_listening(sockfd);
+    //    if(bindResult != -1)
+    //    {
+    //        struct sockaddr_storage client_addr;
+    //        socklen_t               client_addr_len = sizeof(client_addr);
+    //        int                     client_sockfd;
+    //        start_listening(sockfd);
+    //
+    //        client_sockfd = socket_accept_connection(sockfd, &client_addr, &client_addr_len);
+    //        if(client_sockfd != -1)
+    //        {
+    //            handle_connection(client_sockfd);
+    //            socket_close(client_sockfd);
+    //        }
+    //    }
+    //    else
+    //    {
+    //        socket_connect(sockfd, &addr, port);
+    //        handle_connection(sockfd);
+    //    }
 
-        client_sockfd = socket_accept_connection(sockfd, &client_addr, &client_addr_len);
-        if(client_sockfd != -1)
-        {
-            handle_connection(client_sockfd);
-            socket_close(client_sockfd);
-        }
-    }
-    else
-    {
-        socket_connect(sockfd, &addr, port);
-        handle_connection(sockfd);
-    }
+    socket_connect(sockfd, &addr, port);
+    handle_connection(sockfd);
 
     socket_close(sockfd);
 
@@ -213,103 +208,6 @@ static int socket_create(int domain, int type, int protocol)
     return sockfd;
 }
 
-static int socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port)
-{
-    char      addr_str[INET6_ADDRSTRLEN];
-    socklen_t addr_len;
-    void     *vaddr;
-    in_port_t net_port;
-
-    int bindResult;
-
-    net_port = htons(port);
-
-    if(addr->ss_family == AF_INET)
-    {
-        struct sockaddr_in *ipv4_addr;
-
-        ipv4_addr           = (struct sockaddr_in *)addr;
-        addr_len            = sizeof(*ipv4_addr);
-        ipv4_addr->sin_port = net_port;
-        vaddr               = (void *)&(((struct sockaddr_in *)addr)->sin_addr);
-    }
-    else if(addr->ss_family == AF_INET6)
-    {
-        struct sockaddr_in6 *ipv6_addr;
-
-        ipv6_addr            = (struct sockaddr_in6 *)addr;
-        addr_len             = sizeof(*ipv6_addr);
-        ipv6_addr->sin6_port = net_port;
-        vaddr                = (void *)&(((struct sockaddr_in6 *)addr)->sin6_addr);
-    }
-    else
-    {
-        fprintf(stderr,
-                "Internal error: addr->ss_family must be AF_INET or AF_INET6, was: "
-                "%d\n",
-                addr->ss_family);
-        exit(EXIT_FAILURE);
-    }
-
-    if(inet_ntop(addr->ss_family, vaddr, addr_str, sizeof(addr_str)) == NULL)
-    {
-        perror("inet_ntop\n");
-        exit(EXIT_FAILURE);
-    }
-
-    bindResult = bind(sockfd, (struct sockaddr *)addr, addr_len);
-
-    if(bindResult != -1)
-    {
-        printf("Bound to socket: %s:%u\n", addr_str, port);
-    }
-
-    return bindResult;
-}
-
-static void start_listening(int server_fd)
-{
-    if(listen(server_fd, MAX_CONNECTIONS) == -1)
-    {
-        perror("listen failed");
-        close(server_fd);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Waiting for a friend to connect...\n");
-}
-
-static int socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len)
-{
-    int  client_fd;
-    char client_host[NI_MAXHOST];
-    char client_service[NI_MAXSERV];
-
-    errno     = 0;
-    client_fd = accept(server_fd, (struct sockaddr *)client_addr, client_addr_len);
-
-    if(client_fd == -1)
-    {
-        if(errno != EINTR)
-        {
-            perror("accept failed\n");
-        }
-
-        return -1;
-    }
-
-    if(getnameinfo((struct sockaddr *)client_addr, *client_addr_len, client_host, NI_MAXHOST, client_service, NI_MAXSERV, 0) == 0)
-    {
-        printf("You are now chatting with %s:%s\n", client_host, client_service);
-    }
-    else
-    {
-        printf("Unable to get client information\n");
-    }
-
-    return client_fd;
-}
-
 static void socket_connect(int sockfd, struct sockaddr_storage *addr, in_port_t port)
 {
     char      addr_str[INET6_ADDRSTRLEN];
@@ -373,6 +271,8 @@ static void setup_signal_handler(void)
 
 static void handle_connection(int sockfd)
 {
+    // TODO: MAKE DUMMY CLIENT TALKINBG.
+
     (void)sockfd;
 }
 
