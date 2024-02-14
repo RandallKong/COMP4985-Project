@@ -44,8 +44,7 @@ static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct ThreadArgs
 {
-    int  client_socket;
-    DBM *db;
+    int client_socket;
 };
 
 typedef struct
@@ -75,16 +74,6 @@ int main(int argc, char *argv[])
     struct sockaddr_storage addr;
     ThreadPool              thread_pool;
 
-    DBM *db;
-    db = dbm_open(DB_NAME, O_RDWR | O_CREAT, OPTIONS);    // INIT
-    if(!db)
-    {
-        perror("dbm_open");
-        exit(EXIT_FAILURE);
-    }
-
-    //    dbm_close(db);    // close
-
     address  = NULL;
     port_str = NULL;
 
@@ -106,8 +95,6 @@ int main(int argc, char *argv[])
         struct sockaddr_storage client_addr;
         socklen_t               client_addr_len;
         struct ThreadArgs      *args;
-
-        //        printf("--------------------------------------------\n");
 
         client_addr_len = sizeof(client_addr);
         client_sockfd   = socket_accept_connection(sockfd, &client_addr, &client_addr_len);
@@ -132,10 +119,7 @@ int main(int argc, char *argv[])
 
         args->client_socket = client_sockfd;
 
-        // handle_connection(client_sockfd, &client_addr);
         thread_pool_enqueue(&thread_pool, handle_connection, args);
-        //                free(args);
-        //         socket_close(client_sockfd);
 
         free(args);
     }
