@@ -39,6 +39,7 @@ static void socket_close(int sockfd);
 #define IP_ADDR_INDEX 1
 #define PORT_INDEX 2
 #define BASE_TEN 10
+#define MAX_CLIENTS 32
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -271,9 +272,50 @@ static void setup_signal_handler(void)
 
 static void handle_connection(int sockfd)
 {
-    // TODO: MAKE DUMMY CLIENT TALKINBG.
+    // No need to malloc here since we know the maximum size beforehand
+    char message[MAX_CLIENTS];
 
-    (void)sockfd;
+    while(1)
+    {
+        char *result;
+
+        //        printf("Enter message: ");
+        //        fflush(stdout);    // Make sure prompt is displayed
+
+        result = fgets(message, sizeof(message), stdin);
+
+        if(result == NULL)
+        {
+            // Error handling if fgets fails
+            break;
+        }
+
+        // Check if the message is just a newline (i.e., user pressed enter)
+        //        if(message[0] == '\n')
+        //        {
+        //            printf("Empty message, exiting.\n");
+        //            break;
+        //        }
+
+        if(exit_flag)
+        {
+            printf("Server has closed connection");
+
+            break;
+        }
+
+        // send(client_sockfd, http_response, strlen(http_response), 0);
+        send(sockfd, message, strlen(message), 0);
+
+        // Send the message to the server
+
+        // Sleep for 1 second (for simulation purposes)
+        sleep(1);
+    }
+
+    // No need to free memory here, as message is a stack-allocated array
+
+    (void)sockfd;    // Just to suppress the unused variable warning
 }
 
 #pragma GCC diagnostic pop

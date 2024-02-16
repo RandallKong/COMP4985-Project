@@ -102,10 +102,11 @@ void *handle_client(void *arg)
             if(clients[i] != 0 && i != client_index)
             {
                 send(clients[i], buffer, strlen(buffer), 0);
+                printf("%d <-------- %s", clients[i], buffer);
             }
             //            send(clients[i], buffer, strlen(buffer), 0);
 
-//            printf("sent to fd %d\n", clients[i]);
+            //            printf("sent to fd %d\n", clients[i]);
         }
     }
 }
@@ -268,7 +269,7 @@ static void start_server(const char *address, uint16_t port)
                 {
                     send(clients[i], server_buffer, strlen(server_buffer), 0);
 
-                    printf("sent |%s| to fd %d", server_buffer, clients[i]);
+                    printf("%d <-------- %s", clients[i], server_buffer);
                 }
             }
         }
