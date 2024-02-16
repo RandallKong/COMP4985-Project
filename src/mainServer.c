@@ -15,10 +15,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 32
-#define BUFFER_SIZE 1024
-#define UINT16_MAX 65535
-
 static void      setup_signal_handler(void);
 static void      sigint_handler(int signum);
 static void      parse_arguments(int argc, char *argv[], char **ip_address, char **port);
@@ -31,13 +27,13 @@ static void      start_listening(int server_fd, int backlog);
 static int       socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
 static void      socket_close(int sockfd);
 
-// static void *handle_connection(void *arg);
+static void *handle_client(void *arg);
+static void  start_server(struct sockaddr_storage addr, in_port_t port);
 
 #define BASE_TEN 10
-
-// #define BUFFER 10000
-// #define MAX_CLIENTS 30
-// #define OPTIONS 0666
+#define MAX_CLIENTS 32
+#define BUFFER_SIZE 1024
+#define UINT16_MAX 65535
 
 struct ClientInfo
 {
@@ -50,12 +46,6 @@ static int clients[MAX_CLIENTS] = {0};
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
-
-// static const int value    = 10;
-// static const int valueNew = 20;
-
-static void *handle_client(void *arg);
-static void  start_server(struct sockaddr_storage addr, in_port_t port);
 
 int main(int argc, char *argv[])
 {
@@ -128,7 +118,7 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
         int    max_sd;
         int    activity;
         fd_set readfds;
-        FD_ZERO(&readfds);
+        memset(&readfds, 0, sizeof(readfds));
         FD_SET(server_socket, &readfds);
         FD_SET(STDIN_FILENO, &readfds);
 
@@ -203,10 +193,9 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                 perror("Thread creation failed");
                 close(client_socket);
                 free(client_info);
-                continue;    // Continue listening for connections
+                continue;
             }
 
-            // Detach the thread (we won't join it, allowing it to clean up resources on its own)
             pthread_detach(tid);
         }
 
@@ -467,11 +456,6 @@ static void setup_signal_handler(void)
         exit(EXIT_FAILURE);
     }
 }
-
-// #pragma GCC diagnostic push
-// #pragma GCC diagnostic ignored "-Wunused-parameter"
-//
-// #pragma GCC diagnostic pop
 
 static void socket_close(int sockfd)
 {
