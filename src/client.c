@@ -291,7 +291,7 @@ static void handle_connection(int sockfd)
     }
 
     printf("Connected to the server. Type your messages and press Enter to send. "
-           "Press Ctrl-Z to exit or Ctrl-D to close the Server Connection.\n");
+           "Press Ctrl-c to exit or Ctrl-D to close the Server Connection.\n");
 
     // Start a simple chat loop
     while(1)
