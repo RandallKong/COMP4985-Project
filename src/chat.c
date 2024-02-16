@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 32
 #define BUFFER_SIZE 1024
 #define UINT16_MAX 65535
 
@@ -86,6 +86,7 @@ void *handle_client(void *arg)
         ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if(bytes_received <= 0)
         {
+            clients[client_index] = 0;
             printf("Client %d closed the connection.\n", client_index);
             close(client_socket);
             clients[client_index] = 0;
@@ -188,12 +189,14 @@ static void start_server(const char *address, uint16_t port)
         // Wait for activity on one of the sockets
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
 
-        if(activity < 0)
-        {
-            perror("Select error");
-            close(server_socket);
-            exit(EXIT_FAILURE);
-        }
+        (void)activity;
+
+        //        if(activity < 0)
+        //        {
+        //            perror("Select error");
+        //            close(server_socket);
+        //            exit(EXIT_FAILURE);
+        //        }
 
         // New connection
         if(FD_ISSET((long unsigned int)server_socket, &readfds))
