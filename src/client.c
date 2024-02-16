@@ -307,7 +307,7 @@ static void handle_connection(int sockfd)
 
         if(activity < 0)
         {
-            perror("Select error");
+//            perror("Select error");
             break;
         }
 
@@ -357,7 +357,7 @@ static void socket_close(int sockfd)
 {
     if(close(sockfd) == -1)
     {
-        perror("Error closing socket\n");
+        //        perror("Error closing socket\n");
         exit(EXIT_FAILURE);
     }
 }
