@@ -39,7 +39,7 @@ static void socket_close(int sockfd);
 #define IP_ADDR_INDEX 1
 #define PORT_INDEX 2
 #define BASE_TEN 10
-#define MAX_CLIENTS 32
+#define BUFFER_SIZE 1000
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -272,50 +272,83 @@ static void setup_signal_handler(void)
 
 static void handle_connection(int sockfd)
 {
-    // No need to malloc here since we know the maximum size beforehand
-    char message[MAX_CLIENTS];
+    int flags;
 
-    while(1)
+    flags = fcntl(sockfd, F_GETFD);
+    if(flags == -1)
     {
-        char *result;
-
-        //        printf("Enter message: ");
-        //        fflush(stdout);    // Make sure prompt is displayed
-
-        result = fgets(message, sizeof(message), stdin);
-
-        if(result == NULL)
-        {
-            // Error handling if fgets fails
-            break;
-        }
-
-        // Check if the message is just a newline (i.e., user pressed enter)
-        //        if(message[0] == '\n')
-        //        {
-        //            printf("Empty message, exiting.\n");
-        //            break;
-        //        }
-
-        if(exit_flag)
-        {
-            printf("Server has closed connection");
-
-            break;
-        }
-
-        // send(client_sockfd, http_response, strlen(http_response), 0);
-        send(sockfd, message, strlen(message), 0);
-
-        // Send the message to the server
-
-        // Sleep for 1 second (for simulation purposes)
-        sleep(1);
+        close(sockfd);
+        perror("Error getting flags on socket");
+        exit(EXIT_FAILURE);
     }
 
-    // No need to free memory here, as message is a stack-allocated array
+    flags |= FD_CLOEXEC;
+    if(fcntl(sockfd, F_SETFD, flags) == -1)
+    {
+        close(sockfd);
+        perror("Error setting FD_CLOEXEC on socket");
+        exit(EXIT_FAILURE);
+    }
 
-    (void)sockfd;    // Just to suppress the unused variable warning
+    printf("Connected to the server. Type your messages and press Enter to send. "
+           "Press Ctrl-Z to exit or Ctrl-D to close the Server Connection.\n");
+
+    // Start a simple chat loop
+    while(1)
+    {
+        int    activity;
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET((long unsigned int)sockfd, &readfds);
+        FD_SET((long unsigned int)STDIN_FILENO, &readfds);
+
+        // Wait for activity on the socket or user input
+        activity = select(sockfd + 1, &readfds, NULL, NULL, NULL);
+
+        if(activity < 0)
+        {
+            perror("Select error");
+            break;
+        }
+
+        // Check if there is a message from the server or other clients
+        if(FD_ISSET((long unsigned int)sockfd, &readfds))
+        {
+            char    server_buffer[BUFFER_SIZE];
+            ssize_t bytes_received = recv(sockfd, server_buffer, sizeof(server_buffer) - 1, 0);
+
+            if(bytes_received <= 0)
+            {
+                printf("\nServer closed the connection.\n");
+                break;
+            }
+
+            server_buffer[bytes_received] = '\0';
+
+            printf("Received: %s\n", server_buffer);
+        }
+
+        // Check if there is user input
+        if(FD_ISSET((long unsigned int)STDIN_FILENO, &readfds))
+        {
+            char client_buffer[BUFFER_SIZE];
+            if(fgets(client_buffer, sizeof(client_buffer), stdin) == NULL)
+            {
+                // Ctrl-D was pressed, causing EOF
+                printf("EOF detected. Closing connection.\n");
+                break;
+            }
+
+            if(send(sockfd, client_buffer, strlen(client_buffer), 0) == -1)
+            {
+                perror("Error sending message");
+                break;
+            }
+        }
+    }
+
+    // Close the client socket when the loop exits
+    close(sockfd);
 }
 
 #pragma GCC diagnostic pop
