@@ -16,8 +16,10 @@ struct ClientInfo
 {
     int client_socket;
     int client_index;
-    int clients[MAX_CLIENTS];
 };
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static int clients[MAX_CLIENTS] = {0};
 
 static const int value    = 10;
 static const int valueNew = 20;
@@ -77,14 +79,14 @@ void *handle_client(void *arg)
     struct ClientInfo *client_info   = (struct ClientInfo *)arg;
     int                client_socket = client_info->client_socket;
     int                client_index  = client_info->client_index;
-    int               *clients       = client_info->clients;
+    //    int               *clients       = client_info->clients;
 
     while(1)
     {
         ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if(bytes_received <= 0)
         {
-            printf("Server closed the connection.\n");
+            printf("Client %d closed the connection.\n", client_index);
             close(client_socket);
             clients[client_index] = 0;
             free(client_info);
@@ -92,7 +94,7 @@ void *handle_client(void *arg)
         }
 
         buffer[bytes_received] = '\0';
-        printf("Received from Client %d: %s", client_index, buffer);
+        printf("Received from Client %d: %s", client_socket, buffer);
 
         // Broadcast the message to all other connected clients
         for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -101,6 +103,9 @@ void *handle_client(void *arg)
             {
                 send(clients[i], buffer, strlen(buffer), 0);
             }
+            //            send(clients[i], buffer, strlen(buffer), 0);
+
+//            printf("sent to fd %d\n", clients[i]);
         }
     }
 }
@@ -111,8 +116,8 @@ static void start_server(const char *address, uint16_t port)
     int                client_socket;
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
-    int                clients[MAX_CLIENTS] = {0};
-    int                optval               = 1;
+    //    int                clients[MAX_CLIENTS] = {0};
+    int optval = 1;
 
 #ifdef SOCK_CLOEXEC
     server_socket = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -233,10 +238,11 @@ static void start_server(const char *address, uint16_t port)
 
             client_info->client_socket = client_socket;
             client_info->client_index  = client_index;
-            memcpy(client_info->clients, clients, sizeof(clients));
+            // TODO: HERE
+            //            memcpy(client_info->clients, clients, sizeof(clients));
 
             // Create a new thread to handle the client
-            if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)
+            if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)    // TODO: CLIENT INFO DOESENT CONTAIN UPDATED VERSIPON OF THE CLIEJNT LIST.
             {
                 perror("Thread creation failed");
                 close(server_socket);
@@ -261,6 +267,8 @@ static void start_server(const char *address, uint16_t port)
                 if(clients[i] != 0)
                 {
                     send(clients[i], server_buffer, strlen(server_buffer), 0);
+
+                    printf("sent |%s| to fd %d", server_buffer, clients[i]);
                 }
             }
         }
@@ -349,7 +357,8 @@ void start_client(const char *address, uint16_t port)
             }
 
             server_buffer[bytes_received] = '\0';
-            printf("Received: %s", server_buffer);
+
+            printf("Received: %s\n", server_buffer);
         }
 
         // Check if there is user input
