@@ -11,8 +11,8 @@ Role: Team 3 - Server
 
 
 # Run
-./server [ip address] [port]
-./client [ip address] [port] <------ this is a dummy client for testing. Just basic connection. 
+1) ./server [ip address] [port]
+2) ./client [ip address] [port] <------ this is a dummy client for testing. Just basic connection. 
 
 # Tips
 - don't push files .sh executables generate.
