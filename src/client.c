@@ -298,7 +298,7 @@ static void handle_connection(int sockfd)
     {
         int    activity;
         fd_set readfds;
-        FD_ZERO(&readfds);
+        memset(&readfds, 0, sizeof(readfds));
         FD_SET((long unsigned int)sockfd, &readfds);
         FD_SET((long unsigned int)STDIN_FILENO, &readfds);
 
@@ -307,7 +307,7 @@ static void handle_connection(int sockfd)
 
         if(activity < 0)
         {
-//            perror("Select error");
+            //            perror("Select error");
             break;
         }
 
