@@ -31,14 +31,16 @@ static void *handle_client(void *arg);
 static void  start_server(struct sockaddr_storage addr, in_port_t port);
 
 #define BASE_TEN 10
+#define MAX_USERNAME_SIZE 15
 #define MAX_CLIENTS 32
 #define BUFFER_SIZE 1024
 #define UINT16_MAX 65535
 
 struct ClientInfo
 {
-    int client_socket;
-    int client_index;
+    int  client_socket;
+    int  client_index;
+    char username[];
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
@@ -69,9 +71,12 @@ int main(int argc, char *argv[])
 void *handle_client(void *arg)
 {
     char               buffer[BUFFER_SIZE];
+    char               sent_message[BUFFER_SIZE];
     struct ClientInfo *client_info   = (struct ClientInfo *)arg;
     int                client_socket = client_info->client_socket;
     int                client_index  = client_info->client_index;
+    char               client_username[MAX_USERNAME_SIZE];
+    strcpy(client_username, client_info->username);
 
     while(1)
     {
@@ -79,7 +84,8 @@ void *handle_client(void *arg)
         if(bytes_received <= 0)
         {
             clients[client_index] = 0;
-            printf("Client %d closed the connection.\n", client_index);
+            // printf("Client %d closed the connection.\n", client_index);
+            printf("%s left the chat.\n", client_username);
             close(client_socket);
             clients[client_index] = 0;
             free(client_info);
@@ -87,14 +93,18 @@ void *handle_client(void *arg)
         }
 
         buffer[bytes_received] = '\0';
-        printf("Received from Client %d: %s", client_socket, buffer);
+        // printf("Received from Client %d: %s", client_socket, buffer);
+        printf("Received from %s: %s", client_username, buffer);
+
+        // snprintf(sent_message, sizeof(sent_message), "%d: %s", client_socket, buffer);
+        snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
 
         // Broadcast the message to all other connected clients
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
             if(clients[i] != 0 && i != client_index)
             {
-                send(clients[i], buffer, strlen(buffer), 0);
+                send(clients[i], sent_message, strlen(sent_message), 0);
                 printf("%d <-------- %s", clients[i], buffer);
             }
         }
@@ -186,13 +196,14 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
 
             client_info->client_socket = client_socket;
             client_info->client_index  = client_index;
+            sprintf(client_info->username, "Client %d", client_index);
 
             // Create a new thread to handle the client
             if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)
             {
                 perror("Thread creation failed");
                 close(client_socket);
-                free(client_info);
+                //                free(client_info);
                 continue;
             }
 

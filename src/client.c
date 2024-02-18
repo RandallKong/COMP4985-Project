@@ -325,7 +325,7 @@ static void handle_connection(int sockfd)
 
             server_buffer[bytes_received] = '\0';
 
-            printf("Received: %s\n", server_buffer);
+            printf("%s\n", server_buffer);
         }
 
         // Check if there is user input
