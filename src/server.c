@@ -29,6 +29,7 @@ static void      socket_close(int sockfd);
 
 static void *handle_client(void *arg);
 static void  start_server(struct sockaddr_storage addr, in_port_t port);
+// void         print_users(void);
 
 #define BASE_TEN 10
 #define MAX_USERNAME_SIZE 15
@@ -38,13 +39,18 @@ static void  start_server(struct sockaddr_storage addr, in_port_t port);
 
 struct ClientInfo
 {
-    int  client_socket;
-    int  client_index;
-    char username[];
+    int   client_socket;
+    int   client_index;
+    char *username;
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static int clients[MAX_CLIENTS] = {0};
+static struct ClientInfo clients[MAX_CLIENTS];
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+// static int numClients = 0;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+// static int clients[MAX_CLIENTS] = {0};
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -70,45 +76,49 @@ int main(int argc, char *argv[])
 
 void *handle_client(void *arg)
 {
-    char               buffer[BUFFER_SIZE];
-    char               sent_message[BUFFER_SIZE];
-    struct ClientInfo *client_info   = (struct ClientInfo *)arg;
-    int                client_socket = client_info->client_socket;
-    int                client_index  = client_info->client_index;
-    char               client_username[MAX_USERNAME_SIZE];
-    strcpy(client_username, client_info->username);
+    char                     buffer[BUFFER_SIZE];
+    char                     sent_message[BUFFER_SIZE];
+    const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
+    int                      client_socket   = client_info->client_socket;
+    int                      client_index    = client_info->client_index;
+    const char              *client_username = client_info->username;    // Change to pointer
+    ssize_t                  bytes_sent;                                 // Change bytes_sent to ssize_t
 
     while(1)
     {
         ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
         if(bytes_received <= 0)
         {
-            clients[client_index] = 0;
-            // printf("Client %d closed the connection.\n", client_index);
             printf("%s left the chat.\n", client_username);
             close(client_socket);
-            clients[client_index] = 0;
-            free(client_info);
-            pthread_exit(NULL);
+            clients[client_index].client_socket = 0;    // Mark client socket as closed
+            break;                                      // Exit the loop when client disconnects
         }
 
         buffer[bytes_received] = '\0';
-        // printf("Received from Client %d: %s", client_socket, buffer);
         printf("Received from %s: %s", client_username, buffer);
 
-        // snprintf(sent_message, sizeof(sent_message), "%d: %s", client_socket, buffer);
         snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
 
         // Broadcast the message to all other connected clients
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
-            if(clients[i] != 0 && i != client_index)
+            if(clients[i].client_socket != 0 && i != client_index)
             {
-                send(clients[i], sent_message, strlen(sent_message), 0);
-                printf("%d <-------- %s", clients[i], buffer);
+                bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
+                if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
+                {
+                    fprintf(stderr, "Error sending message to client %d\n", i);
+                    // Handle error, maybe close the connection or mark it for closure
+                }
+                printf("%d <-------- %s", clients[i].client_socket, buffer);
             }
         }
+
+        // print_users();
     }
+
+    pthread_exit(NULL);    // Exit the thread when the loop breaks
 }
 
 static void start_server(struct sockaddr_storage addr, in_port_t port)
@@ -123,6 +133,17 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     start_listening(server_socket, BASE_TEN);
     setup_signal_handler();
 
+    // Allocate memory for usernames
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        clients[i].username = malloc(MAX_USERNAME_SIZE);
+        if(clients[i].username == NULL)
+        {
+            perror("Memory allocation failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     while(!exit_flag)
     {
         int    max_sd;
@@ -135,12 +156,12 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
         max_sd = server_socket;
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
-            if(clients[i] > 0)
+            if(clients[i].client_socket > 0)    // Check if the client socket is valid
             {
-                FD_SET(clients[i], &readfds);
-                if(clients[i] > max_sd)
+                FD_SET(clients[i].client_socket, &readfds);
+                if(clients[i].client_socket > max_sd)
                 {
-                    max_sd = clients[i];
+                    max_sd = clients[i].client_socket;
                 }
             }
         }
@@ -149,7 +170,7 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
         if(activity == -1)
         {
-            //            perror("select");
+            // perror("select");
             continue;    // Keep listening for connections
         }
 
@@ -167,7 +188,7 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             }
             for(int i = 0; i < MAX_CLIENTS; ++i)
             {
-                if(clients[i] == 0)
+                if(clients[i].client_socket == 0)
                 {
                     client_index = i;
                     break;
@@ -183,27 +204,16 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
 
             printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index);
 
-            clients[client_index] = client_socket;
-
-            // Create a structure to hold client information
-            client_info = malloc(sizeof(struct ClientInfo));
-            if(client_info == NULL)
-            {
-                perror("Memory allocation failed");
-                close(client_socket);
-                continue;    // Continue listening for connections
-            }
-
-            client_info->client_socket = client_socket;
-            client_info->client_index  = client_index;
-            sprintf(client_info->username, "Client %d", client_index);
+            clients[client_index].client_socket = client_socket;
+            clients[client_index].client_index  = client_index;
+            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
 
             // Create a new thread to handle the client
+            client_info = &clients[client_index];    // Pass the address of the struct in the array
             if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)
             {
                 perror("Thread creation failed");
                 close(client_socket);
-                //                free(client_info);
                 continue;
             }
 
@@ -219,10 +229,10 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             // Broadcast the server's message to all connected clients
             for(int i = 0; i < MAX_CLIENTS; ++i)
             {
-                if(clients[i] != 0)
+                if(clients[i].client_socket != 0)    // Check if the client socket is valid
                 {
-                    send(clients[i], server_buffer, strlen(server_buffer), 0);
-                    printf("%d <-------- %s", clients[i], server_buffer);
+                    send(clients[i].client_socket, server_buffer, strlen(server_buffer), 0);
+                    printf("%d <-------- %s", clients[i].client_socket, server_buffer);
                 }
             }
         }
@@ -231,7 +241,28 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     // Close server socket
     shutdown(server_socket, SHUT_RDWR);
     socket_close(server_socket);
+
+    // Free allocated memory for usernames
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        free(clients[i].username);
+    }
 }
+
+// void print_users(void)
+//{
+//     printf("Current Users:\n");
+//     for(int i = 0; i < MAX_CLIENTS; ++i)
+//     {
+//         if(clients[i].client_socket != 0)
+//         {
+//             printf("User %d:\n", i);
+//             printf("    Username: %s\n", clients[i].username);
+//             printf("    Client Socket: %d\n", clients[i].client_socket);
+//             printf("    Client Index: %d\n", clients[i].client_index);
+//         }
+//     }
+// }
 
 static void parse_arguments(int argc, char *argv[], char **ip_address, char **port)
 {
