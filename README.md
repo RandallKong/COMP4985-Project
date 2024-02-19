@@ -22,7 +22,7 @@ Role: Team 3 - Server
 - reliable read/write                      {Status - GOOD}
 - works with gcc and clang                 {Status - GOOD}
 - multiple concurrent connections          {Status - GOOD}
-- commands (/h, /ul, /u, /w)               {Status - GOOD}
+- commands (/h, /ul, /u, /w)               {Status - Not Yet}
 - work with all os (MacOS, Manjaro, ??)    {Status - Not Yet}
 
 - with client team 6 (Jiang Peng, Jianhua) {Status - Not Yet}
