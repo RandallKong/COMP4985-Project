@@ -12,16 +12,19 @@ Role: Team 3 - Server
 
 # Run
 1) ./server [ip address] [port]
-2) ./client [ip address] [port] <------ this is a dummy client for testing. Just basic connection. 
+2) ./client [ip address] [port]
 
 # Tips
 - don't push files .sh executables generate.
 
 # Testing
-- connection with client                   {Status - Not Yet}
-- reliable read/write                      {Status - Not Yet}
+- connection with client                   {Status - GOOD}
+- reliable read/write                      {Status - GOOD}
+- works with gcc and clang                 {Status - GOOD}
+- multiple concurrent connections          {Status - GOOD}
+- commands (/h, /ul, /u, /w)               {Status - GOOD}
 - work with all os (MacOS, Manjaro, ??)    {Status - Not Yet}
-- multiple concurrent connections          {Status - Not Yet}
+
 - with client team 6 (Jiang Peng, Jianhua) {Status - Not Yet}
 - with client team 7 (Dong-il, Tushar)     {Status - Not Yet}
 - with client team 8 (Kiefer, Jack)        {Status - Not Yet}
