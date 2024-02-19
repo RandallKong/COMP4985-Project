@@ -38,6 +38,10 @@ static void  free_usernames(void);
 #define BUFFER_SIZE 1024
 #define UINT16_MAX 65535
 
+#define WELCOME_MESSAGE "\nWelcome to the chat, "
+#define COMMAND_LIST "/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
+#define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
+
 struct ClientInfo
 {
     int   client_socket;
@@ -202,11 +206,14 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             int                client_socket;
             int                client_index = -1;
             struct ClientInfo *client_info;
+            char               welcome_message[BUFFER_SIZE];
+
             client_addr_len = sizeof(client_addr);
             client_socket   = socket_accept_connection(server_socket, &client_addr, &client_addr_len);
 
             if(client_socket == -1)
             {
+                // TODO: error hand
                 continue;    // Continue listening for connections
             }
 
@@ -237,6 +244,13 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
 
             pthread_mutex_unlock(&clients_mutex);
+
+            sprintf(welcome_message, "%s %s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
+
+            send(client_socket, welcome_message, strlen(welcome_message), 0);
+            send(client_socket, COMMAND_LIST, strlen(COMMAND_LIST), 0);
+
+            // welcome message
 
             // Create a new thread to handle the client
             client_info = &clients[client_index];    // Pass the address of the struct in the array
@@ -269,6 +283,14 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             }
 
             pthread_mutex_unlock(&clients_mutex);
+        }
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        if(clients[i].client_socket != 0)
+        {
+            send(clients[i].client_socket, SHUTDOWN_MESSAGE, strlen(SHUTDOWN_MESSAGE), 0);
         }
     }
 

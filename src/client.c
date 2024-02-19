@@ -290,8 +290,8 @@ static void handle_connection(int sockfd)
         exit(EXIT_FAILURE);
     }
 
-    printf("Connected to the server. Type your messages and press Enter to send. "
-           "Press Ctrl-c to exit or Ctrl-D to close the Server Connection.\n");
+    //    printf("Connected to the server. Type your messages and press Enter to send. "
+    //           "Press Ctrl-c to exit or Ctrl-D to close the Server Connection.\n");
 
     // Start a simple chat loop
     while(1)
@@ -319,7 +319,8 @@ static void handle_connection(int sockfd)
 
             if(bytes_received <= 0)
             {
-                printf("\nServer closed the connection.\n");
+                // this should be given from server side.
+                //                printf("\nServer closed the connection.\n");
                 break;
             }
 
