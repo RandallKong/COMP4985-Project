@@ -49,7 +49,7 @@ struct ClientInfo
 static struct ClientInfo clients[MAX_CLIENTS];
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -230,7 +230,7 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                 continue;    // Continue listening for connections
             }
 
-            printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index);
+            printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
 
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
