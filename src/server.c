@@ -49,6 +49,9 @@ struct ClientInfo
 static struct ClientInfo clients[MAX_CLIENTS];
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
 
 int main(int argc, char *argv[])
@@ -87,14 +90,20 @@ void *handle_client(void *arg)
         {
             printf("%s left the chat.\n", client_username);
             close(client_socket);
+
+            pthread_mutex_lock(&clients_mutex);         // Lock the mutex before modifying the clients array
             clients[client_index].client_socket = 0;    // Mark client socket as closed
-            break;                                      // Exit the loop when client disconnects
+            pthread_mutex_unlock(&clients_mutex);       // Unlock the mutex after modifying the clients array
+
+            break;    // Exit the loop when client disconnects
         }
 
         buffer[bytes_received] = '\0';
         printf("Received from %s: %s", client_username, buffer);
 
         snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
+
+        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
 
         // Broadcast the message to all other connected clients
         for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -104,18 +113,32 @@ void *handle_client(void *arg)
                 bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
                 if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
                 {
-                    fprintf(stderr, "Error sending message to client %d\n", i);
-                    free_usernames();
-                    // Handle error, maybe close the connection or mark it for closure
+                    //                    fprintf(stderr, "Error sending message to client %d\n", i);
+
+                    // Close the connection to the client
+                    close(clients[i].client_socket);
+
+                    // Mark the client socket as closed
+                    pthread_mutex_lock(&clients_mutex);
+                    clients[i].client_socket = 0;
+                    pthread_mutex_unlock(&clients_mutex);
+
+                    // TODO: MIGHT NEED TO FREE MEM HERE
+
+                    // Optionally, you can continue processing other clients or break out of the loop
+                    continue;
+                    // break;
                 }
+
                 printf("%d <-------- %s", clients[i].client_socket, buffer);
             }
         }
 
+        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
+
         // print_users();
     }
 
-    // free(client_info->username);
     pthread_exit(NULL);    // Exit the thread when the loop breaks
 }
 
@@ -187,6 +210,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                 continue;    // Continue listening for connections
             }
 
+            pthread_mutex_lock(&clients_mutex);
+
             for(int i = 0; i < MAX_CLIENTS; ++i)
             {
                 if(clients[i].client_socket == 0)
@@ -198,12 +223,10 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
 
             if(client_index == -1)
             {
-                const char *rejection_message;
-
-                //fprintf(stderr, "Too many clients. Connection rejected.\n");
-                rejection_message = "Server: server is full, please join back later\n";
+                const char *rejection_message = "Server: server is full, please join back later\n";
                 send(client_socket, rejection_message, strlen(rejection_message), 0);
                 close(client_socket);
+                pthread_mutex_unlock(&clients_mutex);
                 continue;    // Continue listening for connections
             }
 
@@ -212,6 +235,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
             snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
+
+            pthread_mutex_unlock(&clients_mutex);
 
             // Create a new thread to handle the client
             client_info = &clients[client_index];    // Pass the address of the struct in the array
@@ -231,6 +256,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             char server_buffer[BUFFER_SIZE];
             fgets(server_buffer, sizeof(server_buffer), stdin);
 
+            pthread_mutex_lock(&clients_mutex);
+
             // Broadcast the server's message to all connected clients
             for(int i = 0; i < MAX_CLIENTS; ++i)
             {
@@ -240,6 +267,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                     printf("%d <-------- %s", clients[i].client_socket, server_buffer);
                 }
             }
+
+            pthread_mutex_unlock(&clients_mutex);
         }
     }
 
@@ -247,11 +276,6 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     shutdown(server_socket, SHUT_RDWR);
     socket_close(server_socket);
 
-    // Free allocated memory for usernames
-    //    for(int i = 0; i < MAX_CLIENTS; ++i)
-    //    {
-    //        free(clients[i].username);
-    //    }
     free_usernames();
 }
 
