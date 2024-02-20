@@ -36,7 +36,7 @@ static void  free_usernames(void);
 #define MAX_USERNAME_SIZE 15
 #define MAX_CLIENTS 32
 #define BUFFER_SIZE 1024
-#define UINT16_MAX 65535
+//#define UINT16_MAX 65535
 
 #define WELCOME_MESSAGE "\nWelcome to the chat, "
 #define COMMAND_LIST "/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
