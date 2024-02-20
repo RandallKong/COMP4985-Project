@@ -1,2 +1,2 @@
-client src/client.c
-chat src/chat.c
+    server src/server.c
+    client src/client.c

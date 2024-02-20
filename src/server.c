@@ -1,8 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
-#include <limits.h>
-#include <ndbm.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -11,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -27,112 +27,304 @@ static void      start_listening(int server_fd, int backlog);
 static int       socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
 static void      socket_close(int sockfd);
 
+static void *handle_client(void *arg);
+static void  start_server(struct sockaddr_storage addr, in_port_t port);
+static void  free_usernames(void);
+// void         print_users(void);
+
 #define BASE_TEN 10
-// #define BUFFER 2048
-#define MAX_CLIENTS 10
-#define OPTIONS 0666
-#define DB_NAME "data.db"
-// #define AVG 10
-//  #define AGENT 15
-//   #define STORAGE 1000
+#define MAX_USERNAME_SIZE 15
+#define MAX_CLIENTS 32
+#define BUFFER_SIZE 1024
+//#define UINT16_MAX 65535
 
-// init the mutexes
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,-warnings-as-errors)
-static pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,-warnings-as-errors)
-static pthread_mutex_t write_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define WELCOME_MESSAGE "\nWelcome to the chat, "
+#define COMMAND_LIST "/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
+#define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
 
-struct ThreadArgs
+struct ClientInfo
 {
-    int client_socket;
+    int   client_socket;
+    int   client_index;
+    char *username;
 };
 
-typedef struct
-{
-    pthread_t *threads;
-    int        size;
-} ThreadPool;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static struct ClientInfo clients[MAX_CLIENTS];
 
-void thread_pool_init(ThreadPool *pool, int size);
-void thread_pool_destroy(ThreadPool *pool);
-void thread_pool_enqueue(ThreadPool *pool, void *(*func)(void *), void *arg);
-
-static void *handle_connection(void *arg);
-
-void *thread_function(void *arg);    // dummy
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
 
 int main(int argc, char *argv[])
 {
+    in_port_t               port;
     char                   *address;
     char                   *port_str;
-    in_port_t               port;
-    int                     backlog = BASE_TEN;
-    int                     sockfd;
     struct sockaddr_storage addr;
-    ThreadPool              thread_pool;
 
     address  = NULL;
     port_str = NULL;
 
-    printf("--------------------------------------------\n");
-
     parse_arguments(argc, argv, &address, &port_str);
     handle_arguments(address, port_str, &port);
     convert_address(address, &addr);
-    sockfd = socket_create(addr.ss_family, SOCK_STREAM, 0);
-    socket_bind(sockfd, &addr, port);
-    start_listening(sockfd, backlog);
-    setup_signal_handler();
 
-    thread_pool_init(&thread_pool, MAX_CLIENTS);
+    start_server(addr, port);
 
-    while(!exit_flag)
+    return 0;
+}
+
+void *handle_client(void *arg)
+{
+    char                     buffer[BUFFER_SIZE];
+    char                     sent_message[BUFFER_SIZE];
+    const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
+    int                      client_socket   = client_info->client_socket;
+    int                      client_index    = client_info->client_index;
+    const char              *client_username = client_info->username;    // Change to pointer
+    ssize_t                  bytes_sent;                                 // Change bytes_sent to ssize_t
+
+    while(1)
     {
-        int                     client_sockfd;
-        struct sockaddr_storage client_addr;
-        socklen_t               client_addr_len;
-        struct ThreadArgs      *args;
-
-        client_addr_len = sizeof(client_addr);
-        client_sockfd   = socket_accept_connection(sockfd, &client_addr, &client_addr_len);
-
-        args     = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
-        args->db = db;
-
-        if(client_sockfd == -1)
+        ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        if(bytes_received <= 0)
         {
-            if(exit_flag)
+            printf("%s left the chat.\n", client_username);
+            close(client_socket);
+
+            pthread_mutex_lock(&clients_mutex);         // Lock the mutex before modifying the clients array
+            clients[client_index].client_socket = 0;    // Mark client socket as closed
+            pthread_mutex_unlock(&clients_mutex);       // Unlock the mutex after modifying the clients array
+
+            break;    // Exit the loop when client disconnects
+        }
+
+        buffer[bytes_received] = '\0';
+        printf("Received from %s: %s", client_username, buffer);
+
+        snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
+
+        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
+
+        // Broadcast the message to all other connected clients
+        for(int i = 0; i < MAX_CLIENTS; ++i)
+        {
+            if(clients[i].client_socket != 0 && i != client_index)
             {
-                free(args);
-                break;
+                bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
+                if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
+                {
+                    //                    fprintf(stderr, "Error sending message to client %d\n", i);
+
+                    // Close the connection to the client
+                    close(clients[i].client_socket);
+
+                    // Mark the client socket as closed
+                    pthread_mutex_lock(&clients_mutex);
+                    clients[i].client_socket = 0;
+                    pthread_mutex_unlock(&clients_mutex);
+
+                    // TODO: MIGHT NEED TO FREE MEM HERE
+
+                    // Optionally, you can continue processing other clients or break out of the loop
+                    continue;
+                    // break;
+                }
+
+                printf("%d <-------- %s", clients[i].client_socket, buffer);
             }
         }
 
-        if(exit_flag)
-        {
-            free(args);
-            break;
-        }
+        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
 
-        args->client_socket = client_sockfd;
-
-        thread_pool_enqueue(&thread_pool, handle_connection, args);
-
-        free(args);
+        // print_users();
     }
 
-    thread_pool_destroy(&thread_pool);
+    pthread_exit(NULL);    // Exit the thread when the loop breaks
+}
 
-    shutdown(sockfd, SHUT_RDWR);
+static void start_server(struct sockaddr_storage addr, in_port_t port)
+{
+    int                     server_socket;
+    struct sockaddr_storage client_addr;
+    socklen_t               client_addr_len;
+    pthread_t               tid;
 
-    socket_close(sockfd);
+    server_socket = socket_create(addr.ss_family, SOCK_STREAM, 0);
+    socket_bind(server_socket, &addr, port);
+    start_listening(server_socket, BASE_TEN);
+    setup_signal_handler();
 
-    dbm_close(db);
+    // Allocate memory for usernames
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        clients[i].username = malloc(MAX_USERNAME_SIZE);
+        if(clients[i].username == NULL)
+        {
+            perror("Memory allocation failed");
+            free_usernames();
+            exit(EXIT_FAILURE);
+        }
+    }
 
-    return EXIT_SUCCESS;
+    while(!exit_flag)
+    {
+        int    max_sd;
+        int    activity;
+        fd_set readfds;
+        memset(&readfds, 0, sizeof(readfds));
+        FD_SET(server_socket, &readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+
+        max_sd = server_socket;
+        for(int i = 0; i < MAX_CLIENTS; ++i)
+        {
+            if(clients[i].client_socket > 0)    // Check if the client socket is valid
+            {
+                FD_SET(clients[i].client_socket, &readfds);
+                if(clients[i].client_socket > max_sd)
+                {
+                    max_sd = clients[i].client_socket;
+                }
+            }
+        }
+
+        // Wait for activity on one of the sockets
+        activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+        if(activity == -1)
+        {
+            // perror("select");
+            continue;    // Keep listening for connections
+        }
+
+        // New connection
+        if(FD_ISSET(server_socket, &readfds))
+        {
+            int                client_socket;
+            int                client_index = -1;
+            struct ClientInfo *client_info;
+            char               welcome_message[BUFFER_SIZE];
+
+            client_addr_len = sizeof(client_addr);
+            client_socket   = socket_accept_connection(server_socket, &client_addr, &client_addr_len);
+
+            if(client_socket == -1)
+            {
+                // TODO: error hand
+                continue;    // Continue listening for connections
+            }
+
+            pthread_mutex_lock(&clients_mutex);
+
+            for(int i = 0; i < MAX_CLIENTS; ++i)
+            {
+                if(clients[i].client_socket == 0)
+                {
+                    client_index = i;
+                    break;
+                }
+            }
+
+            if(client_index == -1)
+            {
+                const char *rejection_message = "Server: server is full, please join back later\n";
+                send(client_socket, rejection_message, strlen(rejection_message), 0);
+                close(client_socket);
+                pthread_mutex_unlock(&clients_mutex);
+                continue;    // Continue listening for connections
+            }
+
+            printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+
+            clients[client_index].client_socket = client_socket;
+            clients[client_index].client_index  = client_index;
+            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
+
+            pthread_mutex_unlock(&clients_mutex);
+
+            sprintf(welcome_message, "%s %s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
+
+            send(client_socket, welcome_message, strlen(welcome_message), 0);
+            send(client_socket, COMMAND_LIST, strlen(COMMAND_LIST), 0);
+
+            // welcome message
+
+            // Create a new thread to handle the client
+            client_info = &clients[client_index];    // Pass the address of the struct in the array
+            if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)
+            {
+                perror("Thread creation failed");
+                close(client_socket);
+                continue;
+            }
+
+            pthread_detach(tid);
+        }
+
+        // Check if there is input from the server's console
+        if(FD_ISSET(STDIN_FILENO, &readfds))
+        {
+            char server_buffer[BUFFER_SIZE];
+            fgets(server_buffer, sizeof(server_buffer), stdin);
+
+            pthread_mutex_lock(&clients_mutex);
+
+            // Broadcast the server's message to all connected clients
+            for(int i = 0; i < MAX_CLIENTS; ++i)
+            {
+                if(clients[i].client_socket != 0)    // Check if the client socket is valid
+                {
+                    send(clients[i].client_socket, server_buffer, strlen(server_buffer), 0);
+                    printf("%d <-------- %s", clients[i].client_socket, server_buffer);
+                }
+            }
+
+            pthread_mutex_unlock(&clients_mutex);
+        }
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        if(clients[i].client_socket != 0)
+        {
+            send(clients[i].client_socket, SHUTDOWN_MESSAGE, strlen(SHUTDOWN_MESSAGE), 0);
+        }
+    }
+
+    // Close server socket
+    shutdown(server_socket, SHUT_RDWR);
+    socket_close(server_socket);
+
+    free_usernames();
+}
+
+// void print_users(void)
+//{
+//     printf("Current Users:\n");
+//     for(int i = 0; i < MAX_CLIENTS; ++i)
+//     {
+//         if(clients[i].client_socket != 0)
+//         {
+//             printf("User %d:\n", i);
+//             printf("    Username: %s\n", clients[i].username);
+//             printf("    Client Socket: %d\n", clients[i].client_socket);
+//             printf("    Client Index: %d\n", clients[i].client_index);
+//         }
+//     }
+
+static void free_usernames(void)
+{
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        if(clients[i].username != NULL)
+        {
+            free(clients[i].username);
+            clients[i].username = NULL;    // Optional: Set the pointer to NULL after freeing
+        }
+    }
 }
 
 static void parse_arguments(int argc, char *argv[], char **ip_address, char **port)
@@ -335,7 +527,7 @@ static int socket_accept_connection(int server_fd, struct sockaddr_storage *clie
 
     if(getnameinfo((struct sockaddr *)client_addr, *client_addr_len, client_host, NI_MAXHOST, client_service, NI_MAXSERV, 0) == 0)
     {
-        printf("Received new request from -> %s:%s\n\n", client_host, client_service);
+        // printf("Received new request from -> %s:%s\n\n", client_host, client_service);
     }
     else
     {
@@ -370,33 +562,6 @@ static void setup_signal_handler(void)
     }
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
-static void *handle_connection(void *arg)
-{
-    const struct ThreadArgs *args;
-    int                      client_sockfd;
-
-    args = (struct ThreadArgs *)arg;
-    //
-    client_sockfd = args->client_socket;
-
-    printf("handling");
-    pthread_mutex_lock(&read_mutex);
-
-    pthread_mutex_unlock(&read_mutex);
-
-    pthread_mutex_lock(&write_mutex);
-    pthread_mutex_unlock(&write_mutex);
-
-    socket_close(client_sockfd);
-
-    return NULL;
-}
-
-#pragma GCC diagnostic pop
-
 static void socket_close(int sockfd)
 {
     if(close(sockfd) == -1)
@@ -404,82 +569,4 @@ static void socket_close(int sockfd)
         perror("Error closing socket\n");
         exit(EXIT_FAILURE);
     }
-}
-
-void thread_pool_init(ThreadPool *pool, int size)
-{
-    pthread_attr_t thread_attr;
-
-    pool->threads = (pthread_t *)malloc(sizeof(pthread_t) * (unsigned long)size);
-    pool->size    = size;
-
-    pthread_attr_init(&thread_attr);
-
-    for(int i = 0; i < size; i++)
-    {
-        pthread_create(&(pool->threads[i]), NULL, thread_function, NULL);
-    }
-}
-
-void thread_pool_destroy(ThreadPool *pool)
-{
-    for(int i = 0; i < pool->size; i++)
-    {
-        pthread_join(pool->threads[i], NULL);
-    }
-
-    free(pool->threads);
-}
-
-void thread_pool_enqueue(ThreadPool *pool, void *(*func)(void *), void *arg)
-{
-    for(int i = 0; i < pool->size; i++)
-    {
-        struct ThreadArgs *thread_args = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
-        if(thread_args == NULL)
-        {
-            free(arg);
-            perror("Error allocating memory for thread arguments");
-            exit(EXIT_FAILURE);
-        }
-        memcpy(thread_args, arg, sizeof(struct ThreadArgs));
-
-        if(pthread_create(&(pool->threads[i]), NULL, func, thread_args) == 0)
-        {
-            // Thread creation successful, return immediately
-            return;
-        }
-    }
-
-    // All threads busy, wait for one to finish and retry
-    for(int i = 0; i < pool->size; i++)
-    {
-        struct ThreadArgs *thread_args;
-
-        pthread_join(pool->threads[i], NULL);
-
-        // Allocate new memory for each retry
-        thread_args = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
-        if(thread_args == NULL)
-        {
-            free(arg);
-            perror("Error allocating memory for thread arguments");
-            exit(EXIT_FAILURE);
-        }
-        memcpy(thread_args, arg, sizeof(struct ThreadArgs));
-
-        if(pthread_create(&(pool->threads[i]), NULL, func, thread_args) == 0)
-        {
-            // Thread creation successful, return immediately
-            return;
-        }
-    }
-}
-
-// DUMMY FUNCTION
-void *thread_function(void *arg)
-{
-    (void)arg;
-    // Your thread logic goes here
-    return NULL;
 }
