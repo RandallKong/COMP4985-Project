@@ -32,15 +32,22 @@ static void  start_server(struct sockaddr_storage addr, in_port_t port);
 static void  free_usernames(void);
 // void         print_users(void);
 
+static void handle_message(const char *buffer, int sender_fd);
+static void send_user_list(int sender_fd);
+static void set_username(int sender_fd, const char *buffer);
+
 #define BASE_TEN 10
 #define MAX_USERNAME_SIZE 15
 #define MAX_CLIENTS 32
 #define BUFFER_SIZE 1024
-//#define UINT16_MAX 65535
+// #define UINT16_MAX 65535
 
 #define WELCOME_MESSAGE "\nWelcome to the chat, "
-#define COMMAND_LIST "/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
+#define COMMAND_LIST "COMMAND LIST\n/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
 #define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
+
+#define USERNAME_FAILURE "Server: Sorry that username is already taken"
+#define USERNAME_SUCCESS "Server: Success! You will now go by "
 
 struct ClientInfo
 {
@@ -108,6 +115,8 @@ void *handle_client(void *arg)
         snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
 
         pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
+
+        handle_message(buffer, client_socket);
 
         // Broadcast the message to all other connected clients
         for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -270,6 +279,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             char server_buffer[BUFFER_SIZE];
             fgets(server_buffer, sizeof(server_buffer), stdin);
 
+            // handle_message(server_buffer);
+
             pthread_mutex_lock(&clients_mutex);
 
             // Broadcast the server's message to all connected clients
@@ -301,19 +312,101 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     free_usernames();
 }
 
-// void print_users(void)
-//{
-//     printf("Current Users:\n");
-//     for(int i = 0; i < MAX_CLIENTS; ++i)
-//     {
-//         if(clients[i].client_socket != 0)
-//         {
-//             printf("User %d:\n", i);
-//             printf("    Username: %s\n", clients[i].username);
-//             printf("    Client Socket: %d\n", clients[i].client_socket);
-//             printf("    Client Index: %d\n", clients[i].client_index);
-//         }
-//     }
+static void handle_message(const char *buffer, int sender_fd)
+{
+    if(buffer[0] == '/')
+    {
+        // Extract command
+        char command[BUFFER_SIZE];    // Assuming command length is not more than 20 characters
+        sscanf(buffer, "/%19s", command);
+
+        printf("command: %s\n", command);
+
+        // Check command and call corresponding function
+        if(strcmp(command, "h") == 0)
+        {
+            send(sender_fd, COMMAND_LIST, strlen(COMMAND_LIST), 0);
+        }
+        else if(strcmp(command, "ul") == 0)
+        {
+            send_user_list(sender_fd);
+        }
+        else if(strcmp(command, "u") == 0)
+        {
+            set_username(sender_fd, buffer);
+        }
+        else if(strcmp(command, "w") == 0)
+        {
+            printf("W");
+        }
+        else
+        {
+            printf("Command not found\n");
+        }
+    }
+    else
+    {
+        printf("Regular message\n");
+    }
+}
+
+static void send_user_list(int sender_fd)
+{
+    char user_list[BUFFER_SIZE];
+    memset(user_list, 0, sizeof(user_list));    // Initialize user_list
+
+    // Copy "USER LIST" to user_list
+    strncpy(user_list, "USER LIST\n", sizeof(user_list) - 1);    // Use strncpy to avoid buffer overflow
+
+    // Concatenate each user name to the message
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        // Check if the client socket is valid and username is not NULL
+        if(clients[i].client_socket != 0 && clients[i].username != NULL)
+        {
+            // Concatenate username to user_list
+            strncat(user_list, clients[i].username, sizeof(user_list) - strlen(user_list) - 1);    // Use strncat to avoid buffer overflow
+            strncat(user_list, "\n", sizeof(user_list) - strlen(user_list) - 1);                   // Add newline character
+        }
+    }
+
+    // Send user_list to the sender_fd
+    send(sender_fd, user_list, strlen(user_list), 0);
+}
+
+static void set_username(int sender_fd, const char *buffer)
+{
+    char response[BUFFER_SIZE];
+    char command[BASE_TEN];
+    char username[MAX_USERNAME_SIZE + 1];
+
+    if(sscanf(buffer, "/%9s %14s", command, username) != 2)
+    {
+        send(sender_fd, "Server: Error! No username provided\n", strlen("Server: Error! No username provided\n"), 0);
+        return;
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(strcmp(clients[i].username, username) == 0)
+        {
+            send(sender_fd, USERNAME_FAILURE, strlen(USERNAME_FAILURE), 0);
+            return;
+        }
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(sender_fd == clients[i].client_socket)
+        {
+            snprintf(clients[i].username, MAX_USERNAME_SIZE, "%s", username);
+            break;
+        }
+    }
+
+    sprintf(response, "%s%s.\n", USERNAME_SUCCESS, username);
+    send(sender_fd, response, strlen(response), 0);
+}
 
 static void free_usernames(void)
 {
