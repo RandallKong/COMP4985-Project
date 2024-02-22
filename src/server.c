@@ -48,8 +48,13 @@ static void direct_message(int sender_fd, const char *buffer);
 #define COMMAND_LIST "COMMAND LIST\n/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username (MAX 15 chars, no spaces)\n/w <receiver username> <message> -> whisper\n\n"
 #define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
 
+#define SERVER_FULL "Server: server is full, please join back later\n"
+
 #define USERNAME_FAILURE "Server: Sorry that username is already taken\n"
 #define USERNAME_SUCCESS "Server: Success! You will now go by "
+#define COMMAND_NOT_FOUND "Server: Invalid Command. /h for help\n"
+#define INVALID_NUM_ARGS "Server: Error! Invalid # Arguments. /h for command list.\n"
+#define INVALID_RECEIVER "Server: Non Existent Receiver\n"
 
 struct ClientInfo
 {
@@ -60,6 +65,9 @@ struct ClientInfo
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static struct ClientInfo clients[MAX_CLIENTS];
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static int client_count = 0;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -88,8 +96,8 @@ int main(int argc, char *argv[])
 
 void *handle_client(void *arg)
 {
-    char                     buffer[BUFFER_SIZE];
-    char                     sent_message[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+    /// char                     sent_message[BUFFER_SIZE];
     const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
     int                      client_socket   = client_info->client_socket;
     int                      client_index    = client_info->client_index;
@@ -114,7 +122,7 @@ void *handle_client(void *arg)
         buffer[bytes_received] = '\0';
         printf("Received from %s: %s", client_username, buffer);
 
-        snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
+        // snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
 
         //        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
 
@@ -237,28 +245,30 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                 if(clients[i].client_socket == 0)
                 {
                     client_index = i;
+                    client_count++;
                     break;
                 }
             }
 
             if(client_index == -1)
             {
-                const char *rejection_message = "Server: server is full, please join back later\n";
+                const char *rejection_message = SERVER_FULL;
                 send(client_socket, rejection_message, strlen(rejection_message), 0);
                 close(client_socket);
                 pthread_mutex_unlock(&clients_mutex);
                 continue;    // Continue listening for connections
             }
 
-            printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+            printf("New connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+            printf("Chat Population: %d/%d\n", client_count, MAX_CLIENTS);
 
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
-            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
+            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client%d", client_index + 1);    // Use snprintf to avoid buffer overflow
 
             pthread_mutex_unlock(&clients_mutex);
 
-            sprintf(welcome_message, "%s %s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
+            sprintf(welcome_message, "%s%s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
 
             send(client_socket, welcome_message, strlen(welcome_message), 0);
             send(client_socket, COMMAND_LIST, strlen(COMMAND_LIST), 0);
@@ -324,7 +334,7 @@ static void handle_message(const char *buffer, int sender_fd)
         char command[BUFFER_SIZE];    // Assuming command length is not more than 20 characters
         sscanf(buffer, "/%19s", command);
 
-        printf("command: %s\n", command);
+        // printf("command: %s\n", command);
 
         // Check command and call corresponding function
         if(strcmp(command, "h") == 0)
@@ -345,7 +355,8 @@ static void handle_message(const char *buffer, int sender_fd)
         }
         else
         {
-            printf("Command not found\n");
+            // printf("Command not found\n");
+            send(sender_fd, COMMAND_NOT_FOUND, sizeof(COMMAND_NOT_FOUND), 0);
         }
     }
     else
@@ -434,7 +445,7 @@ static void set_username(int sender_fd, const char *buffer)
 
     if(sscanf(buffer, "/%9s %14s", command, username) != 2)
     {
-        send(sender_fd, "Server: Error! No username provided\n", strlen("Server: Error! No username provided\n"), 0);
+        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
         return;
     }
 
@@ -473,7 +484,7 @@ static void direct_message(int sender_fd, const char *buffer)
 
     if(sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
     {
-        send(sender_fd, "Server: Error! Invalid # Arguments. /h for command list.\n", strlen("Server: Error! Invalid # Arguments. /h for command list.\n"), 0);
+        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
         return;
     }
 
@@ -489,11 +500,21 @@ static void direct_message(int sender_fd, const char *buffer)
     {
         if(strcmp(clients[i].username, receiver) == 0)
         {
-            sprintf(sent_message, "[Direct] %s: %s\n", clients[sender_id].username, message);
+            if(sender_id == i)
+            {
+                sprintf(sent_message, "[Note] %s: %s\n", clients[sender_id].username, message);
+            }
+            else
+            {
+                sprintf(sent_message, "[Direct] %s: %s\n", clients[sender_id].username, message);
+            }
+
             send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
-            break;
+            return;
         }
     }
+
+    send(sender_fd, INVALID_RECEIVER, strlen(INVALID_RECEIVER), 0);
 }
 
 static void free_usernames(void)
