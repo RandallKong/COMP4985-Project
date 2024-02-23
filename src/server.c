@@ -55,6 +55,7 @@ static void direct_message(int sender_fd, const char *buffer);
 #define COMMAND_NOT_FOUND "Server: Invalid Command. /h for help\n"
 #define INVALID_NUM_ARGS "Server: Error! Invalid # Arguments. /h for command list.\n"
 #define INVALID_RECEIVER "Server: Non Existent Receiver\n"
+#define USERNAME_TOO_LONG "Server: Error, username too long. 15 is the MAX.\n"
 
 struct ClientInfo
 {
@@ -111,7 +112,9 @@ void *handle_client(void *arg)
         {
             printf("%s left the chat.\n", client_username);
             close(client_socket);
-
+            client_count--;
+            printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+            fflush(stdout);
             pthread_mutex_lock(&clients_mutex);         // Lock the mutex before modifying the clients array
             clients[client_index].client_socket = 0;    // Mark client socket as closed
             pthread_mutex_unlock(&clients_mutex);       // Unlock the mutex after modifying the clients array
@@ -260,7 +263,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
             }
 
             printf("New connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
-            printf("Chat Population: %d/%d\n", client_count, MAX_CLIENTS);
+            printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+            fflush(stdout);
 
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
@@ -441,11 +445,18 @@ static void set_username(int sender_fd, const char *buffer)
 {
     char response[BUFFER_SIZE];
     char command[BASE_TEN];
-    char username[MAX_USERNAME_SIZE + 1];
+    char username[BUFFER_SIZE];
+    char nothing[BUFFER_SIZE];
 
-    if(sscanf(buffer, "/%9s %14s", command, username) != 2)
+    if(sscanf(buffer, "/%9s %50s %100s", command, username, nothing) != 2)
     {
         send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
+        return;
+    }
+
+    if(strlen(username) > MAX_USERNAME_SIZE)
+    {
+        send(sender_fd, USERNAME_TOO_LONG, strlen(USERNAME_TOO_LONG), 0);
         return;
     }
 
