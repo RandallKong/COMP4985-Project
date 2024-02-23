@@ -32,15 +32,30 @@ static void  start_server(struct sockaddr_storage addr, in_port_t port);
 static void  free_usernames(void);
 // void         print_users(void);
 
+static void handle_message(const char *buffer, int sender_fd);
+static void send_user_list(int sender_fd);
+static void set_username(int sender_fd, const char *buffer);
+static void direct_message(int sender_fd, const char *buffer);
+
 #define BASE_TEN 10
 #define MAX_USERNAME_SIZE 15
 #define MAX_CLIENTS 32
 #define BUFFER_SIZE 1024
-//#define UINT16_MAX 65535
+#define MESSAGE_SIZE (BUFFER_SIZE + MAX_USERNAME_SIZE + BASE_TEN)
+// #define UINT16_MAX 65535
 
 #define WELCOME_MESSAGE "\nWelcome to the chat, "
-#define COMMAND_LIST "/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username\n/w <receiver> <message> -> whisper\n\n"
+#define COMMAND_LIST "COMMAND LIST\n/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username (MAX 15 chars, no spaces)\n/w <receiver username> <message> -> whisper\n\n"
 #define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
+
+#define SERVER_FULL "Server: server is full, please join back later\n"
+
+#define USERNAME_FAILURE "Server: Sorry that username is already taken\n"
+#define USERNAME_SUCCESS "Server: Success! You will now go by "
+#define COMMAND_NOT_FOUND "Server: Invalid Command. /h for help\n"
+#define INVALID_NUM_ARGS "Server: Error! Invalid # Arguments. /h for command list.\n"
+#define INVALID_RECEIVER "Server: Non Existent Receiver\n"
+#define USERNAME_TOO_LONG "Server: Error, username too long. 15 is the MAX.\n"
 
 struct ClientInfo
 {
@@ -51,6 +66,9 @@ struct ClientInfo
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static struct ClientInfo clients[MAX_CLIENTS];
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static int client_count = 0;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -79,13 +97,13 @@ int main(int argc, char *argv[])
 
 void *handle_client(void *arg)
 {
-    char                     buffer[BUFFER_SIZE];
-    char                     sent_message[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+    /// char                     sent_message[BUFFER_SIZE];
     const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
     int                      client_socket   = client_info->client_socket;
     int                      client_index    = client_info->client_index;
     const char              *client_username = client_info->username;    // Change to pointer
-    ssize_t                  bytes_sent;                                 // Change bytes_sent to ssize_t
+                                                                         //    ssize_t                  bytes_sent;                                 // Change bytes_sent to ssize_t
 
     while(1)
     {
@@ -94,7 +112,9 @@ void *handle_client(void *arg)
         {
             printf("%s left the chat.\n", client_username);
             close(client_socket);
-
+            client_count--;
+            printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+            fflush(stdout);
             pthread_mutex_lock(&clients_mutex);         // Lock the mutex before modifying the clients array
             clients[client_index].client_socket = 0;    // Mark client socket as closed
             pthread_mutex_unlock(&clients_mutex);       // Unlock the mutex after modifying the clients array
@@ -105,45 +125,49 @@ void *handle_client(void *arg)
         buffer[bytes_received] = '\0';
         printf("Received from %s: %s", client_username, buffer);
 
-        snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
+        // snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
 
-        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
+        //        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
 
-        // Broadcast the message to all other connected clients
-        for(int i = 0; i < MAX_CLIENTS; ++i)
-        {
-            if(clients[i].client_socket != 0 && i != client_index)
-            {
-                bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
-                if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
-                {
-                    //                    fprintf(stderr, "Error sending message to client %d\n", i);
+        handle_message(buffer, client_socket);
 
-                    // Close the connection to the client
-                    close(clients[i].client_socket);
-
-                    // Mark the client socket as closed
-                    pthread_mutex_lock(&clients_mutex);
-                    clients[i].client_socket = 0;
-                    pthread_mutex_unlock(&clients_mutex);
-
-                    // TODO: MIGHT NEED TO FREE MEM HERE
-
-                    // Optionally, you can continue processing other clients or break out of the loop
-                    continue;
-                    // break;
-                }
-
-                printf("%d <-------- %s", clients[i].client_socket, buffer);
-            }
-        }
-
-        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
+        //        // Broadcast the message to all other connected clients
+        //        for(int i = 0; i < MAX_CLIENTS; ++i)
+        //        {
+        //            if(clients[i].client_socket != 0 && i != client_index)
+        //            {
+        //                bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
+        //                if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
+        //                {
+        //                    //                    fprintf(stderr, "Error sending message to client %d\n", i);
+        //
+        //                    // Close the connection to the client
+        //                    close(clients[i].client_socket);
+        //
+        //                    // Mark the client socket as closed
+        //                    pthread_mutex_lock(&clients_mutex);
+        //                    clients[i].client_socket = 0;
+        //                    pthread_mutex_unlock(&clients_mutex);
+        //
+        //                    // TODO: MIGHT NEED TO FREE MEM HERE
+        //
+        //                    // Optionally, you can continue processing other clients or break out of the loop
+        //                    continue;
+        //                    // break;
+        //                }
+        //
+        //                printf("%d <-------- %s", clients[i].client_socket, buffer);
+        //            }
+        //        }
+        //
+        //        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
 
         // print_users();
     }
 
-    pthread_exit(NULL);    // Exit the thread when the loop breaks
+    //    pthread_exit(NULL);    // Exit the thread when the loop breaks
+
+    pthread_exit(NULL);
 }
 
 static void start_server(struct sockaddr_storage addr, in_port_t port)
@@ -224,28 +248,31 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
                 if(clients[i].client_socket == 0)
                 {
                     client_index = i;
+                    client_count++;
                     break;
                 }
             }
 
             if(client_index == -1)
             {
-                const char *rejection_message = "Server: server is full, please join back later\n";
+                const char *rejection_message = SERVER_FULL;
                 send(client_socket, rejection_message, strlen(rejection_message), 0);
                 close(client_socket);
                 pthread_mutex_unlock(&clients_mutex);
                 continue;    // Continue listening for connections
             }
 
-            printf("New connection from %s:%d, assigned to Client %d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+            printf("New connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+            printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+            fflush(stdout);
 
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
-            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client %d", client_index + 1);    // Use snprintf to avoid buffer overflow
+            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client%d", client_index + 1);    // Use snprintf to avoid buffer overflow
 
             pthread_mutex_unlock(&clients_mutex);
 
-            sprintf(welcome_message, "%s %s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
+            sprintf(welcome_message, "%s%s!\n\n", WELCOME_MESSAGE, clients[client_index].username);
 
             send(client_socket, welcome_message, strlen(welcome_message), 0);
             send(client_socket, COMMAND_LIST, strlen(COMMAND_LIST), 0);
@@ -269,6 +296,8 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
         {
             char server_buffer[BUFFER_SIZE];
             fgets(server_buffer, sizeof(server_buffer), stdin);
+
+            // handle_message(server_buffer);
 
             pthread_mutex_lock(&clients_mutex);
 
@@ -301,19 +330,203 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     free_usernames();
 }
 
-// void print_users(void)
-//{
-//     printf("Current Users:\n");
-//     for(int i = 0; i < MAX_CLIENTS; ++i)
-//     {
-//         if(clients[i].client_socket != 0)
-//         {
-//             printf("User %d:\n", i);
-//             printf("    Username: %s\n", clients[i].username);
-//             printf("    Client Socket: %d\n", clients[i].client_socket);
-//             printf("    Client Index: %d\n", clients[i].client_index);
-//         }
-//     }
+static void handle_message(const char *buffer, int sender_fd)
+{
+    if(buffer[0] == '/')
+    {
+        // Extract command
+        char command[BUFFER_SIZE];    // Assuming command length is not more than 20 characters
+        sscanf(buffer, "/%19s", command);
+
+        // printf("command: %s\n", command);
+
+        // Check command and call corresponding function
+        if(strcmp(command, "h") == 0)
+        {
+            send(sender_fd, COMMAND_LIST, strlen(COMMAND_LIST), 0);
+        }
+        else if(strcmp(command, "ul") == 0)
+        {
+            send_user_list(sender_fd);
+        }
+        else if(strcmp(command, "u") == 0)
+        {
+            set_username(sender_fd, buffer);
+        }
+        else if(strcmp(command, "w") == 0)
+        {
+            direct_message(sender_fd, buffer);
+        }
+        else
+        {
+            // printf("Command not found\n");
+            send(sender_fd, COMMAND_NOT_FOUND, sizeof(COMMAND_NOT_FOUND), 0);
+        }
+    }
+    else
+    {
+        char message_with_sender[MESSAGE_SIZE];
+
+        for(int i = 0; i < MAX_CLIENTS; ++i)
+        {
+            // Check if the client socket is valid and username is not NULL
+            if(clients[i].client_socket == sender_fd)
+            {
+                sprintf(message_with_sender, "[All] %s: %s", clients[i].username, buffer);
+                break;
+            }
+        }
+
+        pthread_mutex_lock(&clients_mutex);
+
+        for(int i = 0; i < MAX_CLIENTS; ++i)
+        {
+            if(clients[i].client_socket != 0 && clients[i].client_socket != sender_fd)
+            {
+                ssize_t bytes_sent;
+
+                bytes_sent = send(clients[i].client_socket, message_with_sender, strlen(message_with_sender), 0);
+                if(bytes_sent != (ssize_t)strlen(message_with_sender))
+                {
+                    // Handle error sending message
+                    fprintf(stderr, "Error sending message to client %d\n", i);
+
+                    // Close the connection to the client
+                    close(clients[i].client_socket);
+
+                    // Mark the client socket as closed
+                    pthread_mutex_lock(&clients_mutex);
+                    clients[i].client_socket = 0;
+                    pthread_mutex_unlock(&clients_mutex);
+
+                    // Optionally, you can continue processing other clients or break out of the loop
+                    continue;
+                }
+
+                printf("%d <-------- %s", clients[i].client_socket, buffer);
+            }
+        }
+
+        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
+    }
+}
+
+static void send_user_list(int sender_fd)
+{
+    char user_list[BUFFER_SIZE];
+    memset(user_list, 0, sizeof(user_list));    // Initialize user_list
+
+    // Copy "USER LIST" to user_list
+    strncpy(user_list, "USER LIST\n", sizeof(user_list) - 1);    // Use strncpy to avoid buffer overflow
+
+    // Concatenate each user name to the message
+    for(int i = 0; i < MAX_CLIENTS; ++i)
+    {
+        // Check if the client socket is valid and username is not NULL
+        if(clients[i].client_socket != 0 && clients[i].username != NULL)
+        {
+            // Concatenate username to user_list
+            strncat(user_list, clients[i].username, sizeof(user_list) - strlen(user_list) - 1);    // Use strncat to avoid buffer overflow
+
+            if(sender_fd == clients[i].client_socket)
+            {
+                strncat(user_list, "(you)", sizeof(user_list) - strlen(user_list) - 1);
+            }
+
+            strncat(user_list, "\n", sizeof(user_list) - strlen(user_list) - 1);    // Add newline character
+        }
+    }
+
+    // Send user_list to the sender_fd
+    send(sender_fd, user_list, strlen(user_list), 0);
+}
+
+static void set_username(int sender_fd, const char *buffer)
+{
+    char response[BUFFER_SIZE];
+    char command[BASE_TEN];
+    char username[BUFFER_SIZE];
+    char nothing[BUFFER_SIZE];
+
+    if(sscanf(buffer, "/%9s %50s %100s", command, username, nothing) != 2)
+    {
+        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
+        return;
+    }
+
+    if(strlen(username) > MAX_USERNAME_SIZE)
+    {
+        send(sender_fd, USERNAME_TOO_LONG, strlen(USERNAME_TOO_LONG), 0);
+        return;
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(strcmp(clients[i].username, username) == 0)
+        {
+            send(sender_fd, USERNAME_FAILURE, strlen(USERNAME_FAILURE), 0);
+            return;
+        }
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(sender_fd == clients[i].client_socket)
+        {
+            snprintf(clients[i].username, MAX_USERNAME_SIZE, "%s", username);
+            break;
+        }
+    }
+
+    sprintf(response, "%s%s.\n", USERNAME_SUCCESS, username);
+    send(sender_fd, response, strlen(response), 0);
+}
+
+static void direct_message(int sender_fd, const char *buffer)
+{
+    // char response[BUFFER_SIZE];
+    char command[BASE_TEN];
+    char receiver[MAX_USERNAME_SIZE + 1];
+    char message[BUFFER_SIZE];
+    char sent_message[BUFFER_SIZE];
+    //    int  receiver_fd = 0;
+    //    int  receiver_fd = 0;
+    int sender_id;
+
+    if(sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
+    {
+        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
+        return;
+    }
+
+    for(sender_id = 0; sender_id < MAX_CLIENTS; sender_id++)
+    {
+        if(clients[sender_id].client_socket == sender_fd)
+        {
+            break;
+        }
+    }
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        if(strcmp(clients[i].username, receiver) == 0)
+        {
+            if(sender_id == i)
+            {
+                sprintf(sent_message, "[Note] %s: %s\n", clients[sender_id].username, message);
+            }
+            else
+            {
+                sprintf(sent_message, "[Direct] %s: %s\n", clients[sender_id].username, message);
+            }
+
+            send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
+            return;
+        }
+    }
+
+    send(sender_fd, INVALID_RECEIVER, strlen(INVALID_RECEIVER), 0);
+}
 
 static void free_usernames(void)
 {

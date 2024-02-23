@@ -327,6 +327,7 @@ static void handle_connection(int sockfd)
             server_buffer[bytes_received] = '\0';
 
             printf("%s", server_buffer);
+            fflush(stdout);
         }
 
         // Check if there is user input
