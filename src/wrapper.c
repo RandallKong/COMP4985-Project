@@ -29,7 +29,7 @@ int main(void)
             handle_prompt(&address, &port_str);
             handle_arguments(address, port_str, &port);
             convert_address(address, &addr);
-            start_server(addr, port);
+            start_server(addr, port, 0);
 
             free(address);
             free(port_str);
@@ -39,7 +39,7 @@ int main(void)
             handle_prompt(&address, &port_str);
             handle_arguments(address, port_str, &port);
             convert_address(address, &addr);
-            start_client_server(addr, port);
+            start_admin_server(addr, port);
 
             free(address);
             free(port_str);
@@ -52,7 +52,7 @@ int main(void)
     return 0;
 }
 
-void start_client_server(struct sockaddr_storage addr, in_port_t port)
+void start_admin_server(struct sockaddr_storage addr, in_port_t port)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -133,20 +133,32 @@ void start_client_server(struct sockaddr_storage addr, in_port_t port)
                 }
             }
 
-            if(!passkey_matched)
+            if(passkey_matched == 0)
             {
                 printf("Passkey authentication failed. Closing connection.\n");
                 close(new_socket);
             }
             else
             {
-                // Passkey matched, you can proceed with further communication
-                // start_server(addr, port); // Uncomment if you need to start another server
-                // Passkey matched, you can proceed with further communication
-                // start_server(addr, port); // Uncomment if you need to start another server
+                pid_t pid = fork();
 
-                // Close the socket after handling the connection
-
+                if(pid == 0)
+                {
+                    // Start the group chat server
+                    start_server(addr, port + 1, server_socket);
+                    exit(EXIT_SUCCESS);
+                }
+                else if(pid > 0)
+                {
+                    // Parent process
+                    wait(NULL);
+                }
+                else
+                {
+                    // Fork failed
+                    perror("fork");
+                    exit(EXIT_FAILURE);
+                }
                 // Close the socket after handling the connection
                 close(new_socket);
             }

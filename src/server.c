@@ -75,7 +75,7 @@ void *handle_client(void *arg)
     pthread_exit(NULL);
 }
 
-void start_server(struct sockaddr_storage addr, in_port_t port)
+void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -107,7 +107,7 @@ void start_server(struct sockaddr_storage addr, in_port_t port)
         memset(&readfds, 0, sizeof(readfds));
         FD_SET(server_socket, &readfds);
         FD_SET(STDIN_FILENO, &readfds);
-
+        FD_SET(sm_socket, &readfds);    // Add the Server Manager socket to the read set
         max_sd = server_socket;
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
@@ -194,6 +194,20 @@ void start_server(struct sockaddr_storage addr, in_port_t port)
             }
 
             pthread_detach(tid);
+        }
+
+        // Check for messages from the Server Manager
+        if(FD_ISSET(sm_socket, &readfds))
+        {
+            char    buffer[BUFFER_SIZE];
+            ssize_t bytes_read;
+            bytes_read = recv(sm_socket, buffer, sizeof(buffer), 0);
+            if(bytes_read > 0)
+            {
+                // Handle the message from the Server Manager
+                printf("Message from Server Manager: %s\n", buffer);
+                // You can add logic here to process the message and take appropriate actions
+            }
         }
 
         // Check if there is input from the server's console
