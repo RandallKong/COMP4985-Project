@@ -55,15 +55,31 @@ void start_client_server(struct sockaddr_storage addr, in_port_t port)
 
 void handle_prompt(char **address, char **port_str)
 {
-    printf("\nEnter the IP address to bind the server: ");
+    printf("\nEnter the IP address to bind the server (default 127.0.0.1): ");
     *address = malloc(MAX_INPUT_LENGTH * sizeof(char));
     fgets(*address, MAX_INPUT_LENGTH, stdin);
     (*address)[strcspn(*address, "\n")] = 0;    // Remove newline character
 
-    printf("\nEnter the port to bind the server: ");
+    // Default to 127.0.0.1 if no input is detected
+    if(strlen(*address) == 0)
+    {
+        free(*address);
+        *address = strdup("127.0.0.1");
+        printf("No input detected. Defaulting to IP address: %s\n", *address);
+    }
+
+    printf("\nEnter the port to bind the server (default 8080): ");
     *port_str = malloc(MAX_INPUT_LENGTH * sizeof(char));
     fgets(*port_str, MAX_INPUT_LENGTH, stdin);
     (*port_str)[strcspn(*port_str, "\n")] = 0;    // Remove newline character
+
+    // Default to 8080 if no input is detected
+    if(strlen(*port_str) == 0)
+    {
+        free(*port_str);
+        *port_str = strdup("8080");
+        printf("No input detected. Defaulting to port: %s\n", *port_str);
+    }
 
     // Print the inputted IP address and port
     printf("IP Address: %s\n", *address);
