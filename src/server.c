@@ -1,99 +1,4 @@
-#include <arpa/inet.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <inttypes.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-static void      setup_signal_handler(void);
-static void      sigint_handler(int signum);
-static void      parse_arguments(int argc, char *argv[], char **ip_address, char **port);
-static void      handle_arguments(const char *ip_address, const char *port_str, in_port_t *port);
-static in_port_t parse_in_port_t(const char *port_str);
-static void      convert_address(const char *address, struct sockaddr_storage *addr);
-static int       socket_create(int domain, int type, int protocol);
-static void      socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port);
-static void      start_listening(int server_fd, int backlog);
-static int       socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
-static void      socket_close(int sockfd);
-
-static void *handle_client(void *arg);
-static void  start_server(struct sockaddr_storage addr, in_port_t port);
-static void  free_usernames(void);
-// void         print_users(void);
-
-static void handle_message(const char *buffer, int sender_fd);
-static void send_user_list(int sender_fd);
-static void set_username(int sender_fd, const char *buffer);
-static void direct_message(int sender_fd, const char *buffer);
-
-#define BASE_TEN 10
-#define MAX_USERNAME_SIZE 15
-#define MAX_CLIENTS 32
-#define BUFFER_SIZE 1024
-#define MESSAGE_SIZE (BUFFER_SIZE + MAX_USERNAME_SIZE + BASE_TEN)
-// #define UINT16_MAX 65535
-
-#define WELCOME_MESSAGE "\nWelcome to the chat, "
-#define COMMAND_LIST "COMMAND LIST\n/h ----------------------> list of commands\n/ul ---------------------> list of users\n/u <username> -----------> set username (MAX 15 chars, no spaces)\n/w <receiver username> <message> -> whisper\n\n"
-#define SHUTDOWN_MESSAGE "Server is now offline. Please join back later.\n"
-
-#define SERVER_FULL "Server: server is full, please join back later\n"
-
-#define USERNAME_FAILURE "Server: Sorry that username is already taken\n"
-#define USERNAME_SUCCESS "Server: Success! You will now go by "
-#define COMMAND_NOT_FOUND "Server: Invalid Command. /h for help\n"
-#define INVALID_NUM_ARGS "Server: Error! Invalid # Arguments. /h for command list.\n"
-#define INVALID_RECEIVER "Server: Non Existent Receiver\n"
-#define USERNAME_TOO_LONG "Server: Error, username too long. 15 is the MAX.\n"
-
-struct ClientInfo
-{
-    int   client_socket;
-    int   client_index;
-    char *username;
-};
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static struct ClientInfo clients[MAX_CLIENTS];
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static int client_count = 0;
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile sig_atomic_t exit_flag = 0;
-
-int main(int argc, char *argv[])
-{
-    in_port_t               port;
-    char                   *address;
-    char                   *port_str;
-    struct sockaddr_storage addr;
-
-    address  = NULL;
-    port_str = NULL;
-
-    parse_arguments(argc, argv, &address, &port_str);
-    handle_arguments(address, port_str, &port);
-    convert_address(address, &addr);
-
-    start_server(addr, port);
-
-    return 0;
-}
+#include "../include/server.h"
 
 void *handle_client(void *arg)
 {
@@ -170,7 +75,7 @@ void *handle_client(void *arg)
     pthread_exit(NULL);
 }
 
-static void start_server(struct sockaddr_storage addr, in_port_t port)
+void start_server(struct sockaddr_storage addr, in_port_t port)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -330,7 +235,7 @@ static void start_server(struct sockaddr_storage addr, in_port_t port)
     free_usernames();
 }
 
-static void handle_message(const char *buffer, int sender_fd)
+void handle_message(const char *buffer, int sender_fd)
 {
     if(buffer[0] == '/')
     {
@@ -411,7 +316,7 @@ static void handle_message(const char *buffer, int sender_fd)
     }
 }
 
-static void send_user_list(int sender_fd)
+void send_user_list(int sender_fd)
 {
     char user_list[BUFFER_SIZE];
     memset(user_list, 0, sizeof(user_list));    // Initialize user_list
@@ -441,7 +346,7 @@ static void send_user_list(int sender_fd)
     send(sender_fd, user_list, strlen(user_list), 0);
 }
 
-static void set_username(int sender_fd, const char *buffer)
+void set_username(int sender_fd, const char *buffer)
 {
     char response[BUFFER_SIZE];
     char command[BASE_TEN];
@@ -482,7 +387,7 @@ static void set_username(int sender_fd, const char *buffer)
     send(sender_fd, response, strlen(response), 0);
 }
 
-static void direct_message(int sender_fd, const char *buffer)
+void direct_message(int sender_fd, const char *buffer)
 {
     // char response[BUFFER_SIZE];
     char command[BASE_TEN];
@@ -528,7 +433,7 @@ static void direct_message(int sender_fd, const char *buffer)
     send(sender_fd, INVALID_RECEIVER, strlen(INVALID_RECEIVER), 0);
 }
 
-static void free_usernames(void)
+void free_usernames(void)
 {
     for(int i = 0; i < MAX_CLIENTS; ++i)
     {
@@ -540,7 +445,7 @@ static void free_usernames(void)
     }
 }
 
-static void parse_arguments(int argc, char *argv[], char **ip_address, char **port)
+void parse_arguments(int argc, char *argv[], char **ip_address, char **port)
 {
     if(argc == 3)
     {
@@ -555,7 +460,7 @@ static void parse_arguments(int argc, char *argv[], char **ip_address, char **po
     }
 }
 
-static void handle_arguments(const char *ip_address, const char *port_str, in_port_t *port)
+void handle_arguments(const char *ip_address, const char *port_str, in_port_t *port)
 {
     if(ip_address == NULL)
     {
@@ -604,14 +509,14 @@ in_port_t parse_in_port_t(const char *str)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-static void sigint_handler(int signum)
+void sigint_handler(int signum)
 {
     exit_flag = 1;
 }
 
 #pragma GCC diagnostic pop
 
-static void convert_address(const char *address, struct sockaddr_storage *addr)
+void convert_address(const char *address, struct sockaddr_storage *addr)
 {
     memset(addr, 0, sizeof(*addr));
 
@@ -630,7 +535,7 @@ static void convert_address(const char *address, struct sockaddr_storage *addr)
     }
 }
 
-static int socket_create(int domain, int type, int protocol)
+int socket_create(int domain, int type, int protocol)
 {
     int sockfd;
     int opt = 1;
@@ -653,7 +558,7 @@ static int socket_create(int domain, int type, int protocol)
     return sockfd;
 }
 
-static void socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port)
+void socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port)
 {
     char      addr_str[INET6_ADDRSTRLEN];
     socklen_t addr_len;
@@ -707,7 +612,7 @@ static void socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t por
     printf("Bound to socket: %s:%u\n", addr_str, port);
 }
 
-static void start_listening(int server_fd, int backlog)
+void start_listening(int server_fd, int backlog)
 {
     if(listen(server_fd, backlog) == -1)
     {
@@ -719,7 +624,7 @@ static void start_listening(int server_fd, int backlog)
     printf("Listening for incoming connections...\n");
 }
 
-static int socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len)
+int socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len)
 {
     int  client_fd;
     char client_host[NI_MAXHOST];
@@ -750,7 +655,7 @@ static int socket_accept_connection(int server_fd, struct sockaddr_storage *clie
     return client_fd;
 }
 
-static void setup_signal_handler(void)
+void setup_signal_handler(void)
 {
     struct sigaction sa;
 
@@ -775,7 +680,7 @@ static void setup_signal_handler(void)
     }
 }
 
-static void socket_close(int sockfd)
+void socket_close(int sockfd)
 {
     if(close(sockfd) == -1)
     {
