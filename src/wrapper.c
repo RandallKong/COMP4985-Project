@@ -142,6 +142,10 @@ void start_client_server(struct sockaddr_storage addr, in_port_t port)
             {
                 // Passkey matched, you can proceed with further communication
                 // start_server(addr, port); // Uncomment if you need to start another server
+                // Passkey matched, you can proceed with further communication
+                // start_server(addr, port); // Uncomment if you need to start another server
+
+                // Close the socket after handling the connection
 
                 // Close the socket after handling the connection
                 close(new_socket);
