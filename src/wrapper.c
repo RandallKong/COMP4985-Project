@@ -1,7 +1,7 @@
 
 #include "../include/server.h"
 
-int main(int argc, char *argv[])
+int main(void)
 {
     in_port_t               port;
     char                   *address  = NULL;
@@ -25,21 +25,7 @@ int main(int argc, char *argv[])
     {
         case 1:
             printf("You chose option 1: No session management\n");
-
-            printf("\nEnter the IP address to bind the server: ");
-            address = malloc(MAX_INPUT_LENGTH * sizeof(char));
-            fgets(address, MAX_INPUT_LENGTH, stdin);
-            address[strcspn(address, "\n")] = 0;    // Remove newline character
-
-            printf("\nEnter the port to bind the server: ");
-            port_str = malloc(MAX_INPUT_LENGTH * sizeof(char));
-            fgets(port_str, MAX_INPUT_LENGTH, stdin);
-            port_str[strcspn(port_str, "\n")] = 0;    // Remove newline character
-
-            // Print the inputted IP address and port
-            printf("IP Address: %s\n", address);
-            printf("Port: %s\n", port_str);
-
+            handle_prompt(&address, &port_str);
             handle_arguments(address, port_str, &port);
             convert_address(address, &addr);
             start_server(addr, port);
@@ -49,11 +35,14 @@ int main(int argc, char *argv[])
             break;
         case 2:
             printf("You chose option 2: With session management\n");
-            parse_arguments(argc, argv, &address, &port_str);
+            //            handle_prompt(&address, &port_str);
+            //            handle_arguments(address, port_str, &port);
+            //            convert_address(address, &addr);
+            //            start_client_server(addr, port);
             break;
         default:
             printf("Invalid choice. Please enter 1 or 2.\n");
-            printf("\nRandall be cute");
+            printf("\nRandall be cute\n");
             break;
     }
     return 0;
@@ -62,4 +51,21 @@ int main(int argc, char *argv[])
 void start_client_server(struct sockaddr_storage addr, in_port_t port)
 {
     start_server(addr, port);
+}
+
+void handle_prompt(char **address, char **port_str)
+{
+    printf("\nEnter the IP address to bind the server: ");
+    *address = malloc(MAX_INPUT_LENGTH * sizeof(char));
+    fgets(*address, MAX_INPUT_LENGTH, stdin);
+    (*address)[strcspn(*address, "\n")] = 0;    // Remove newline character
+
+    printf("\nEnter the port to bind the server: ");
+    *port_str = malloc(MAX_INPUT_LENGTH * sizeof(char));
+    fgets(*port_str, MAX_INPUT_LENGTH, stdin);
+    (*port_str)[strcspn(*port_str, "\n")] = 0;    // Remove newline character
+
+    // Print the inputted IP address and port
+    printf("IP Address: %s\n", *address);
+    printf("Port: %s\n", *port_str);
 }

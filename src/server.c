@@ -445,21 +445,6 @@ void free_usernames(void)
     }
 }
 
-void parse_arguments(int argc, char *argv[], char **ip_address, char **port)
-{
-    if(argc == 3)
-    {
-        *ip_address = argv[1];
-        *port       = argv[2];
-    }
-    else
-    {
-        printf("invalid num args\n");
-        printf("usage: ./server [ip addr] [port]\n");
-        exit(EXIT_FAILURE);
-    }
-}
-
 void handle_arguments(const char *ip_address, const char *port_str, in_port_t *port)
 {
     if(ip_address == NULL)

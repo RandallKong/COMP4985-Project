@@ -19,7 +19,6 @@
 
 void      setup_signal_handler(void);
 void      sigint_handler(int signum);
-void      parse_arguments(int argc, char *argv[], char **ip_address, char **port);
 void      handle_arguments(const char *ip_address, const char *port_str, in_port_t *port);
 in_port_t parse_in_port_t(const char *port_str);
 void      convert_address(const char *address, struct sockaddr_storage *addr);
@@ -29,8 +28,12 @@ void      start_listening(int server_fd, int backlog);
 int       socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
 void      socket_close(int sockfd);
 
+// Wrapper Prototypes
+void start_client_server(struct sockaddr_storage addr, in_port_t port);
+void handle_prompt(char **address, char **port_str);
+
+// Client Server Prototypes
 void *handle_client(void *arg);
-void  start_client_server(struct sockaddr_storage addr, in_port_t port);
 void  start_server(struct sockaddr_storage addr, in_port_t port);
 void  free_usernames(void);
 // void         print_users(void);
