@@ -8,7 +8,7 @@ void *handle_client(void *arg)
     int                      client_socket   = client_info->client_socket;
     int                      client_index    = client_info->client_index;
     const char              *client_username = client_info->username;    // Change to pointer
-                                                                         //    ssize_t                  bytes_sent;                                 // Change bytes_sent to ssize_t
+                                                                         // ssize_t                  bytes_sent;// Change bytes_sent to ssize_t
 
     while(1)
     {
@@ -75,7 +75,7 @@ void *handle_client(void *arg)
     pthread_exit(NULL);
 }
 
-void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
+void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -125,7 +125,7 @@ void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
         if(activity == -1)
         {
-            // perror("select");
+            //             perror("select");
             continue;    // Keep listening for connections
         }
 
@@ -136,6 +136,7 @@ void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
             int                client_index = -1;
             struct ClientInfo *client_info;
             char               welcome_message[BUFFER_SIZE];
+            ssize_t            bytes_written;
 
             client_addr_len = sizeof(client_addr);
             client_socket   = socket_accept_connection(server_socket, &client_addr, &client_addr_len);
@@ -182,6 +183,13 @@ void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
             send(client_socket, welcome_message, strlen(welcome_message), 0);
             send(client_socket, COMMAND_LIST, strlen(COMMAND_LIST), 0);
 
+            // Send the updated client count to the admin server
+            bytes_written = write(pipe_write_fd, &client_count, sizeof(client_count));
+            if(bytes_written != sizeof(client_count))
+            {
+                perror("Failed to write client count to pipe");
+            }
+
             // welcome message
 
             // Create a new thread to handle the client
@@ -208,29 +216,6 @@ void start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket)
                 printf("Message from Server Manager: %s\n", buffer);
                 // You can add logic here to process the message and take appropriate actions
             }
-        }
-
-        // Check if there is input from the server's console
-        if(FD_ISSET(STDIN_FILENO, &readfds))
-        {
-            char server_buffer[BUFFER_SIZE];
-            fgets(server_buffer, sizeof(server_buffer), stdin);
-
-            // handle_message(server_buffer);
-
-            pthread_mutex_lock(&clients_mutex);
-
-            // Broadcast the server's message to all connected clients
-            for(int i = 0; i < MAX_CLIENTS; ++i)
-            {
-                if(clients[i].client_socket != 0)    // Check if the client socket is valid
-                {
-                    send(clients[i].client_socket, server_buffer, strlen(server_buffer), 0);
-                    printf("%d <-------- %s", clients[i].client_socket, server_buffer);
-                }
-            }
-
-            pthread_mutex_unlock(&clients_mutex);
         }
     }
 

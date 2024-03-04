@@ -34,10 +34,9 @@ void handle_prompt(char **address, char **port_str);
 
 // Client Server Prototypes
 void *handle_client(void *arg);
-void  start_server(struct sockaddr_storage addr, in_port_t port, int sm_socket);
+void  start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd);
 void  free_usernames(void);
 // void         print_users(void);
-void connect_to_server_manager(const char *sm_ip, int sm_port);
 void handle_message(const char *buffer, int sender_fd);
 void send_user_list(int sender_fd);
 void set_username(int sender_fd, const char *buffer);
