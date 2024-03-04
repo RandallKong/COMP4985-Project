@@ -160,10 +160,13 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
                         if(bytes_read > 0)
                         {
                             ssize_t bytes_sent;
+                            char    count_str[BASE_TEN];    // Enough to hold all digits of an int
                             printf("Received client count from group chat server: %d\n", received_client_count);
 
+                            sprintf(count_str, "%d", received_client_count);
+
                             // Send this information to the server manager
-                            bytes_sent = send(new_socket, &received_client_count, sizeof(received_client_count), 0);
+                            bytes_sent = send(new_socket, count_str, strlen(count_str), 0);
                             if(bytes_sent != sizeof(received_client_count))
                             {
                                 perror("Failed to send client count to server manager");
@@ -200,7 +203,7 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     }
 
     // Close the server socket and clean up
-    close(server_socket);
+    // close(server_socket);
     close(pipe_fds[0]);    // Close the read end of the pipe
 }
 
