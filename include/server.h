@@ -1,5 +1,6 @@
 #ifndef SERVER_SERVER_H
 #define SERVER_SERVER_H
+#define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
