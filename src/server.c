@@ -2,13 +2,11 @@
 
 void *handle_client(void *arg)
 {
-    char buffer[BUFFER_SIZE];
-    /// char                     sent_message[BUFFER_SIZE];
+    char                     buffer[BUFFER_SIZE];
     const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
     int                      client_socket   = client_info->client_socket;
     int                      client_index    = client_info->client_index;
     const char              *client_username = client_info->username;    // Change to pointer
-                                                                         // ssize_t                  bytes_sent;// Change bytes_sent to ssize_t
 
     while(1)
     {
@@ -29,49 +27,8 @@ void *handle_client(void *arg)
 
         buffer[bytes_received] = '\0';
         printf("Received from %s: %s", client_username, buffer);
-
-        // snprintf(sent_message, sizeof(sent_message), "%s: %s", client_username, buffer);
-
-        //        pthread_mutex_lock(&clients_mutex);    // Lock the mutex before accessing the clients array
-
         handle_message(buffer, client_socket);
-
-        //        // Broadcast the message to all other connected clients
-        //        for(int i = 0; i < MAX_CLIENTS; ++i)
-        //        {
-        //            if(clients[i].client_socket != 0 && i != client_index)
-        //            {
-        //                bytes_sent = send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
-        //                if(bytes_sent != (ssize_t)strlen(sent_message))    // Cast strlen to ssize_t
-        //                {
-        //                    //                    fprintf(stderr, "Error sending message to client %d\n", i);
-        //
-        //                    // Close the connection to the client
-        //                    close(clients[i].client_socket);
-        //
-        //                    // Mark the client socket as closed
-        //                    pthread_mutex_lock(&clients_mutex);
-        //                    clients[i].client_socket = 0;
-        //                    pthread_mutex_unlock(&clients_mutex);
-        //
-        //                    // TODO: MIGHT NEED TO FREE MEM HERE
-        //
-        //                    // Optionally, you can continue processing other clients or break out of the loop
-        //                    continue;
-        //                    // break;
-        //                }
-        //
-        //                printf("%d <-------- %s", clients[i].client_socket, buffer);
-        //            }
-        //        }
-        //
-        //        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
-
-        // print_users();
     }
-
-    //    pthread_exit(NULL);    // Exit the thread when the loop breaks
-
     pthread_exit(NULL);
 }
 
@@ -85,7 +42,7 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
     server_socket = socket_create(addr.ss_family, SOCK_STREAM, 0);
     socket_bind(server_socket, &addr, port);
     start_listening(server_socket, BASE_TEN);
-    setup_signal_handler();
+    group_chat_setup_signal_handler();
 
     // Allocate memory for usernames
     for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -99,7 +56,7 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
         }
     }
 
-    while(!exit_flag)
+    while(!group_chat_exit_flag)
     {
         int    max_sd;
         int    activity;
@@ -174,7 +131,7 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
 
             clients[client_index].client_socket = client_socket;
             clients[client_index].client_index  = client_index;
-            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client%d", client_index + 1);    // Use snprintf to avoid buffer overflow
+            snprintf(clients[client_index].username, MAX_USERNAME_SIZE, "Client%d", client_index + 1);
 
             pthread_mutex_unlock(&clients_mutex);
 
@@ -203,20 +160,6 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
 
             pthread_detach(tid);
         }
-
-        // Check for messages from the Server Manager
-        if(FD_ISSET(sm_socket, &readfds))
-        {
-            char    buffer[BUFFER_SIZE];
-            ssize_t bytes_read;
-            bytes_read = recv(sm_socket, buffer, sizeof(buffer), 0);
-            if(bytes_read > 0)
-            {
-                // Handle the message from the Server Manager
-                printf("Message from Server Manager: %s\n", buffer);
-                // You can add logic here to process the message and take appropriate actions
-            }
-        }
     }
 
     for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -230,7 +173,6 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
     // Close server socket
     shutdown(server_socket, SHUT_RDWR);
     socket_close(server_socket);
-
     free_usernames();
 }
 
@@ -493,11 +435,6 @@ in_port_t parse_in_port_t(const char *str)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-void sigint_handler(int signum)
-{
-    exit_flag = 1;
-}
-
 #pragma GCC diagnostic pop
 
 void convert_address(const char *address, struct sockaddr_storage *addr)
@@ -639,7 +576,22 @@ int socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr
     return client_fd;
 }
 
-void setup_signal_handler(void)
+void socket_close(int sockfd)
+{
+    if(close(sockfd) == -1)
+    {
+        perror("Error closing socket\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void group_chat_sigint_handler(int signum)
+{
+    (void)signum;
+    group_chat_exit_flag = 1;
+}
+
+void group_chat_setup_signal_handler(void)
 {
     struct sigaction sa;
 
@@ -649,7 +601,7 @@ void setup_signal_handler(void)
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #endif
-    sa.sa_handler = sigint_handler;
+    sa.sa_handler = group_chat_sigint_handler;
 #if defined(__clang__)
     #pragma clang diagnostic pop
 #endif
@@ -660,15 +612,6 @@ void setup_signal_handler(void)
     if(sigaction(SIGINT, &sa, NULL) == -1)
     {
         perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void socket_close(int sockfd)
-{
-    if(close(sockfd) == -1)
-    {
-        perror("Error closing socket\n");
         exit(EXIT_FAILURE);
     }
 }

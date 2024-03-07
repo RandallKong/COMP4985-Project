@@ -17,8 +17,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-void      setup_signal_handler(void);
-void      sigint_handler(int signum);
+void      admin_sigint_handler(int signum);
+void      admin_setup_signal_handler(void);
+void      group_chat_sigint_handler(int signum);
+void      group_chat_setup_signal_handler(void);
 void      handle_arguments(const char *ip_address, const char *port_str, in_port_t *port);
 in_port_t parse_in_port_t(const char *port_str);
 void      convert_address(const char *address, struct sockaddr_storage *addr);
@@ -28,11 +30,13 @@ void      start_listening(int server_fd, int backlog);
 int       socket_accept_connection(int server_fd, struct sockaddr_storage *client_addr, socklen_t *client_addr_len);
 void      socket_close(int sockfd);
 
-// Wrapper Prototypes
+// Admin Server Methods
 void start_admin_server(struct sockaddr_storage addr, in_port_t port);
 void handle_prompt(char **address, char **port_str);
+int  handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port);
+void read_from_pipe(int pipe_fd, int server_manager_socket);
 
-// Client Server Prototypes
+// GroupChat Methods
 void *handle_client(void *arg);
 void  start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd);
 void  free_usernames(void);
@@ -52,7 +56,6 @@ void direct_message(int sender_fd, const char *buffer);
 // #define UINT16_MAX 65535
 
 // SERVER MANAGER WRAPPER MESSAGES
-
 #define PASSKEY "hellyabrother"
 #define WELCOME_STARTUP "Initializing Server Wrapper"
 #define OPTION_NO_SM "Start the Client Server without SERVER MANAGER"
@@ -88,6 +91,9 @@ static int client_count = 0;
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile sig_atomic_t exit_flag = 0;
+static volatile sig_atomic_t admin_exit_flag = 0;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile sig_atomic_t group_chat_exit_flag = 0;
 
 #endif    // SERVER_SERVER_H

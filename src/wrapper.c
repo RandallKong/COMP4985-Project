@@ -60,11 +60,12 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     fd_set                  readfds;
     int                     max_sd;
     int                     pipe_fds[2];
+    int                     server_manager_socket = 0;
 
     server_socket = socket_create(addr.ss_family, SOCK_STREAM, 0);
     socket_bind(server_socket, &addr, port);
     start_listening(server_socket, BASE_TEN);
-    setup_signal_handler();
+    admin_setup_signal_handler();
 
     // Create a pipe for communication between the admin server and the group chat server
     if(pipe2(pipe_fds, O_CLOEXEC) == -1)
@@ -79,132 +80,66 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     FD_SET(pipe_fds[0], &readfds);    // Add the read end of the pipe to the set
     max_sd = server_socket > pipe_fds[0] ? server_socket : pipe_fds[0];
 
-    while(!exit_flag)
+    while(!admin_exit_flag)
     {
         // Wait for activity on the server socket or the pipe
         if(select(max_sd + 1, &readfds, NULL, NULL, NULL) < 0)
         {
+            if(errno == EINTR)
+            {
+                continue;    // Interrupted by signal, continue the loop
+            }
             perror("select");
             exit(EXIT_FAILURE);
         }
 
-        // Check if there is a new connection
-        if(FD_ISSET(server_socket, &readfds))
+        // Check if there is a new connection and no active server manager connection
+        if(FD_ISSET(server_socket, &readfds) && server_manager_socket == 0)
         {
-            // Handle new connections
-            char passkey_buffer[TWO_FIFTY_SIX];
-            int  attempts        = 0;
-            bool passkey_matched = false;
-            int  new_socket      = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-
-            if(new_socket < 0)
+            server_manager_socket = handle_new_server_manager(server_socket, &client_addr, &client_addr_len, pipe_fds, addr, port);
+            if(server_manager_socket > 0)
             {
-                perror("accept");
-                continue;
-            }
-
-            printf("New connection from %s:%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port));
-
-            // Authenticate the server manager connection
-            while(attempts < 3 && !passkey_matched)
-            {
-                ssize_t bytes_read = recv(new_socket, passkey_buffer, sizeof(passkey_buffer) - 1, 0);
-                if(bytes_read > 0 && passkey_buffer[bytes_read - 1] == '\n')
+                FD_SET(server_manager_socket, &readfds);
+                if(server_manager_socket > max_sd)
                 {
-                    passkey_buffer[bytes_read - 1] = '\0';
-                }
-
-                if(bytes_read <= 0)
-                {
-                    printf("Connection closed or error occurred\n");
-                    break;
-                }
-
-                if(strcmp(passkey_buffer, PASSKEY) == 0)
-                {
-                    passkey_matched = true;
-                    printf("Passkey matched. Connection authorized.\n");
-                }
-                else
-                {
-                    printf("Incorrect passkey. Attempts remaining: %d\n", 2 - attempts);
-                    attempts++;
+                    max_sd = server_manager_socket;
                 }
             }
+        }
 
-            if(!passkey_matched)
-            {
-                printf("Passkey authentication failed. Closing connection.\n");
-                close(new_socket);
-            }
-            else
-            {
-                pid_t pid = fork();
-                if(pid == 0)
-                {                                                                       // initialization of group chat server
-                    close(pipe_fds[0]);                                                 // This child end // Child process: Close the read end of the pipe
-                    start_groupChat_server(addr, port + 1, new_socket, pipe_fds[1]);    // Start the group chat server
-                    close(pipe_fds[1]);                                                 // Close the write end of the pipe after use
-                    exit(EXIT_SUCCESS);
-                }
-                else if(pid > 0)
-                {                          // parent process continuing
-                    close(pipe_fds[1]);    // Parent process: Close the write end of the pipe
+        // Check if there is activity on the server manager socket
+        //        if(server_manager_socket > 0 && FD_ISSET(server_manager_socket, &readfds))
+        //        {
+        //            // Handle activity on the server manager socket (e.g., receiving commands)
+        //            // If the connection is closed, remove the socket from the set and reset the variable
+        //            FD_CLR(server_manager_socket, &readfds);
+        //            close(server_manager_socket);
+        //            server_manager_socket = 0;
+        //        }
 
-                    // Continuously read messages from the child process
-                    while(!exit_flag)
-                    {
-                        int     received_client_count;
-                        ssize_t bytes_read = read(pipe_fds[0], &received_client_count, sizeof(received_client_count));
-
-                        if(bytes_read > 0)
-                        {
-                            ssize_t bytes_sent;
-                            char    count_str[BASE_TEN];    // Enough to hold all digits of an int
-                            printf("Received client count from group chat server: %d\n", received_client_count);
-
-                            sprintf(count_str, "%d", received_client_count);
-
-                            // Send this information to the server manager
-                            bytes_sent = send(new_socket, count_str, strlen(count_str), 0);
-                            if(bytes_sent != sizeof(received_client_count))
-                            {
-                                perror("Failed to send client count to server manager");
-                            }
-                        }
-                        else if(bytes_read == 0)
-                        {
-                            printf("Group chat server closed the pipe.\n");
-                            break;    // Exit the loop if the child process has closed the pipe
-                        }
-                        else
-                        {
-                            perror("Failed to read from pipe");
-                            break;    // Exit the loop if an error occurred
-                        }
-                    }
-
-                    close(pipe_fds[0]);    // Close the read end of the pipe after use
-                    wait(NULL);            // Wait for the child process to terminate
-                }
-                else
-                {
-                    perror("fork");
-                    exit(EXIT_FAILURE);
-                }
-                close(new_socket);    // Close the server manager connection
-            }
+        // Check if there is data to read from the pipe
+        if(FD_ISSET(pipe_fds[0], &readfds))
+        {
+            read_from_pipe(pipe_fds[0], server_manager_socket);    // Read messages from the child process
         }
 
         // Update the set of active sockets for the next iteration
         FD_ZERO(&readfds);
         FD_SET(server_socket, &readfds);
         FD_SET(pipe_fds[0], &readfds);
+        if(server_manager_socket > 0)
+        {
+            FD_SET(server_manager_socket, &readfds);
+        }
     }
 
     // Close the server socket and clean up
-    // close(server_socket);
+    close(server_socket);
     close(pipe_fds[0]);    // Close the read end of the pipe
+    if(server_manager_socket > 0)
+    {
+        close(server_manager_socket);    // Close the server manager socket if it's still open
+    }
 }
 
 void handle_prompt(char **address, char **port_str)
@@ -238,4 +173,144 @@ void handle_prompt(char **address, char **port_str)
     // Print the inputted IP address and port
     printf("IP Address: %s\n", *address);
     printf("Port: %s\n", *port_str);
+}
+
+void admin_setup_signal_handler(void)
+{
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof(sa));
+
+#if defined(__clang__)
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+    sa.sa_handler = admin_sigint_handler;
+#if defined(__clang__)
+    #pragma clang diagnostic pop
+#endif
+
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if(sigaction(SIGINT, &sa, NULL) == -1)
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void admin_sigint_handler(int signum)
+{
+    (void)signum;
+    admin_exit_flag = 1;
+}
+
+int handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port)
+{
+    char  passkey_buffer[TWO_FIFTY_SIX];
+    int   attempts        = 0;
+    bool  passkey_matched = false;
+    int   new_socket      = accept(server_socket, (struct sockaddr *)client_addr, client_addr_len);
+    pid_t pid;
+
+    if(new_socket < 0)
+    {
+        perror("accept");
+        return -1;
+    }
+
+    printf("New connection from %s:%d\n", inet_ntoa(((struct sockaddr_in *)client_addr)->sin_addr), ntohs(((struct sockaddr_in *)client_addr)->sin_port));
+
+    // Authenticate the server manager connection
+    while(attempts < 3 && !passkey_matched)
+    {
+        ssize_t bytes_read = recv(new_socket, passkey_buffer, sizeof(passkey_buffer) - 1, 0);
+        if(bytes_read > 0 && passkey_buffer[bytes_read - 1] == '\n')
+        {
+            passkey_buffer[bytes_read - 1] = '\0';
+        }
+
+        if(bytes_read <= 0)
+        {
+            printf("Connection closed or error occurred\n");
+            close(new_socket);
+            return -1;
+        }
+
+        if(strcmp(passkey_buffer, PASSKEY) == 0)
+        {
+            passkey_matched = true;
+            printf("Passkey matched. Connection authorized.\n");
+        }
+        else
+        {
+            printf("Incorrect passkey. Attempts remaining: %d\n", 2 - attempts);
+            attempts++;
+        }
+    }
+
+    if(!passkey_matched)
+    {
+        printf("Passkey authentication failed. Closing connection.\n");
+        close(new_socket);
+        return -1;
+    }
+
+    // Start the group chat server as a child process
+    pid = fork();
+    if(pid == 0)
+    {
+        // Child process: Start the group chat server
+        close(pipe_fds[0]);                                                 // Close the read end of the pipe in the child
+        start_groupChat_server(addr, port + 1, new_socket, pipe_fds[1]);    // Pass the write end of the pipe
+        close(pipe_fds[1]);                                                 // Close the write end of the pipe after use
+        exit(EXIT_SUCCESS);
+    }
+    else if(pid > 0)
+    {
+        close(pipe_fds[1]);    // Close the write end of the pipe in the parent
+        // Optionally close new_socket if it's not used in the parent process
+        // close(new_socket);
+    }
+    else
+    {
+        perror("fork");
+        close(new_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    return new_socket;    // Return the server manager socket
+}
+
+void read_from_pipe(int pipe_fd, int server_manager_socket)
+{
+    int     received_client_count;
+    ssize_t bytes_read = read(pipe_fd, &received_client_count, sizeof(received_client_count));
+
+    if(bytes_read > 0)
+    {
+        char    count_str[BASE_TEN];    // Enough to hold all digits of an int
+        ssize_t bytes_sent;
+        printf("Received client count from group chat server: %d\n", received_client_count);
+
+        // Send this information to the server manager
+        sprintf(count_str, "%d", received_client_count);
+        bytes_sent = send(server_manager_socket, count_str, strlen(count_str), 0);
+        if(bytes_sent < 0)
+        {
+            perror("Failed to send client count to server manager");
+        }
+    }
+    else if(bytes_read == 0)
+    {
+        printf("Group chat server closed the pipe.\n");
+    }
+    else
+    {
+        if(errno != EINTR)
+        {
+            perror("Failed to read from pipe");
+        }
+    }
 }
