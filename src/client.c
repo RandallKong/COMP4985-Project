@@ -1,3 +1,4 @@
+#include "../include/protocol.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -312,28 +313,43 @@ static void handle_connection(int sockfd)
         }
 
         // Check if there is a message from the server or other clients
-        if(FD_ISSET((long unsigned int)sockfd, &readfds))
+        if(FD_ISSET(sockfd, &readfds))
         {
-            char    server_buffer[BUFFER_SIZE];
-            ssize_t bytes_received = recv(sockfd, server_buffer, sizeof(server_buffer) - 1, 0);
+            uint8_t  version, sender;
+            uint16_t content_size;
+            char     server_buffer[BUFFER_SIZE];
+            ssize_t  bytes_received;
+
+            // Read the protocol header
+            if(read_header(sockfd, &version, &content_size) == -1)
+            {
+                perror("Error reading header");
+                break;
+            }
+
+            // Read the actual message content
+            bytes_received = recv(sockfd, server_buffer, content_size, 0);
 
             if(bytes_received <= 0)
             {
-                // this should be given from server side.
-                //                printf("\nServer closed the connection.\n");
+                printf("\nServer closed the connection or error occurred.\n");
                 break;
             }
 
             server_buffer[bytes_received] = '\0';
 
-            printf("%s", server_buffer);
+            // Print the received message along with the header information
+            printf("Version: %u, Content size: %u, Message: %s\n", version, content_size, server_buffer);
             fflush(stdout);
         }
 
         // Check if there is user input
-        if(FD_ISSET((long unsigned int)STDIN_FILENO, &readfds))
+        if(FD_ISSET(STDIN_FILENO, &readfds))
         {
-            char client_buffer[BUFFER_SIZE];
+            char    client_buffer[BUFFER_SIZE];
+            size_t  content_length;
+            uint8_t sender;
+            uint8_t version;
             if(fgets(client_buffer, sizeof(client_buffer), stdin) == NULL)
             {
                 // Ctrl-D was pressed, causing EOF
@@ -341,7 +357,23 @@ static void handle_connection(int sockfd)
                 break;
             }
 
-            if(send(sockfd, client_buffer, strlen(client_buffer), 0) == -1)
+            content_length = strlen(client_buffer);
+            // Trim the newline character if present
+            if(content_length > 0 && client_buffer[content_length - 1] == '\n')
+            {
+                client_buffer[--content_length] = '\0';    // Replace newline with null terminator
+            }
+
+            // Send the protocol header
+            version = PROTOCOL_VERSION;
+            if(send_header(sockfd, version, (uint16_t)content_length) == -1)
+            {
+                perror("Error sending header");
+                break;
+            }
+
+            // Send the actual content
+            if(send(sockfd, client_buffer, content_length, 0) == -1)
             {
                 perror("Error sending message");
                 break;

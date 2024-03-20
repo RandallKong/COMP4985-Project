@@ -1,2 +1,2 @@
 wrapper src/wrapper.c src/server.c include/server.h
-client src/client.c
+client src/client.c src/protocol.c include/protocol.h

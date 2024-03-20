@@ -2,35 +2,50 @@
 
 void *handle_client(void *arg)
 {
-    char                     buffer[BUFFER_SIZE];
-    const struct ClientInfo *client_info     = (struct ClientInfo *)arg;
-    int                      client_socket   = client_info->client_socket;
-    int                      client_index    = client_info->client_index;
-    const char              *client_username = client_info->username;    // Change to pointer
+    const struct ClientInfo *client_info = (const struct ClientInfo *)arg;
+    int client_socket = client_info->client_socket;
+    int client_index = client_info->client_index;
+    const char *client_username = client_info->username;
+    uint8_t version, sender;
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_received;
 
-    while(1)
+    while (1)
     {
-        ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-        if(bytes_received <= 0)
+        uint16_t content_size;
+        // Read the protocol header
+        if (read_header(client_socket, &version, &content_size) <= 0)
         {
             printf("%s left the chat.\n", client_username);
-            close(client_socket);
-            client_count--;
-            printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
-            fflush(stdout);
-            pthread_mutex_lock(&clients_mutex);         // Lock the mutex before modifying the clients array
-            clients[client_index].client_socket = 0;    // Mark client socket as closed
-            pthread_mutex_unlock(&clients_mutex);       // Unlock the mutex after modifying the clients array
-
-            break;    // Exit the loop when client disconnects
+            break;
         }
 
+        // Read the actual message content
+        bytes_received = recv(client_socket, buffer, content_size, 0);
+        if (bytes_received <= 0)
+        {
+            printf("%s left the chat.\n", client_username);
+            break;
+        }
         buffer[bytes_received] = '\0';
-        printf("Received from %s: %s", client_username, buffer);
+
+        // Process the message
+        printf("Received from %s: %s\n", client_username, buffer);
         handle_message(buffer, client_socket);
     }
+
+    // Cleanup when the client disconnects
+    close(client_socket);
+    client_count--;
+    printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+    fflush(stdout);
+    pthread_mutex_lock(&clients_mutex);
+    clients[client_index].client_socket = 0;
+    pthread_mutex_unlock(&clients_mutex);
+
     pthread_exit(NULL);
 }
+
 
 void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd)
 {
@@ -178,18 +193,21 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
 
 void handle_message(const char *buffer, int sender_fd)
 {
+    uint8_t  version = PROTOCOL_VERSION;
+    uint16_t content_size;
+
     if(buffer[0] == '/')
     {
         // Extract command
-        char command[BUFFER_SIZE];    // Assuming command length is not more than 20 characters
+        char command[BUFFER_SIZE];
         sscanf(buffer, "/%19s", command);
-
-        // printf("command: %s\n", command);
 
         // Check command and call corresponding function
         if(strcmp(command, "h") == 0)
         {
-            send(sender_fd, COMMAND_LIST, strlen(COMMAND_LIST), 0);
+            content_size = strlen(COMMAND_LIST);
+            send_header(sender_fd, version, content_size);
+            send(sender_fd, COMMAND_LIST, content_size, 0);
         }
         else if(strcmp(command, "ul") == 0)
         {
@@ -205,8 +223,9 @@ void handle_message(const char *buffer, int sender_fd)
         }
         else
         {
-            // printf("Command not found\n");
-            send(sender_fd, COMMAND_NOT_FOUND, sizeof(COMMAND_NOT_FOUND), 0);
+            content_size = sizeof(COMMAND_NOT_FOUND);
+            send_header(sender_fd, version, content_size);
+            send(sender_fd, COMMAND_NOT_FOUND, content_size, 0);
         }
     }
     else
@@ -215,7 +234,6 @@ void handle_message(const char *buffer, int sender_fd)
 
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
-            // Check if the client socket is valid and username is not NULL
             if(clients[i].client_socket == sender_fd)
             {
                 sprintf(message_with_sender, "[All] %s: %s", clients[i].username, buffer);
@@ -229,37 +247,21 @@ void handle_message(const char *buffer, int sender_fd)
         {
             if(clients[i].client_socket != 0 && clients[i].client_socket != sender_fd)
             {
-                ssize_t bytes_sent;
-
-                bytes_sent = send(clients[i].client_socket, message_with_sender, strlen(message_with_sender), 0);
-                if(bytes_sent != (ssize_t)strlen(message_with_sender))
-                {
-                    // Handle error sending message
-                    fprintf(stderr, "Error sending message to client %d\n", i);
-
-                    // Close the connection to the client
-                    close(clients[i].client_socket);
-
-                    // Mark the client socket as closed
-                    pthread_mutex_lock(&clients_mutex);
-                    clients[i].client_socket = 0;
-                    pthread_mutex_unlock(&clients_mutex);
-
-                    // Optionally, you can continue processing other clients or break out of the loop
-                    continue;
-                }
-
-                printf("%d <-------- %s", clients[i].client_socket, buffer);
+                content_size = (uint16_t)strlen(message_with_sender);
+                send_header(clients[i].client_socket, version, content_size);
+                send(clients[i].client_socket, message_with_sender, content_size, 0);
             }
         }
 
-        pthread_mutex_unlock(&clients_mutex);    // Unlock the mutex after accessing the clients array
+        pthread_mutex_unlock(&clients_mutex);
     }
 }
 
 void send_user_list(int sender_fd)
 {
-    char user_list[BUFFER_SIZE];
+    uint16_t content_size;
+    uint8_t  version;
+    char     user_list[BUFFER_SIZE];
     memset(user_list, 0, sizeof(user_list));    // Initialize user_list
 
     // Copy "USER LIST" to user_list
@@ -283,96 +285,120 @@ void send_user_list(int sender_fd)
         }
     }
 
-    // Send user_list to the sender_fd
-    send(sender_fd, user_list, strlen(user_list), 0);
-}
+    content_size = (uint16_t)strlen(user_list);
+    version      = PROTOCOL_VERSION;
 
+    // Send the protocol header
+    send_header(sender_fd, version, content_size);
+
+    // Send user_list to the sender_fd
+    send(sender_fd, user_list, content_size, 0);
+}
 void set_username(int sender_fd, const char *buffer)
 {
-    char response[BUFFER_SIZE];
     char command[BASE_TEN];
-    char username[BUFFER_SIZE];
-    char nothing[BUFFER_SIZE];
+    char username[MAX_USERNAME_SIZE]; // Adjusted size to match the maximum username size
+    char nothing[BUFFER_SIZE]; // Buffer to capture any extra input
+    char response[BUFFER_SIZE];
+    uint16_t content_size;
+    uint8_t version = PROTOCOL_VERSION;
 
-    if(sscanf(buffer, "/%9s %50s %100s", command, username, nothing) != 2)
+    // Adjusted the sscanf format string to limit the username size
+    if (sscanf(buffer, "/%9s %14s %999s", command, username, nothing) != 2)
     {
-        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
+        content_size = strlen(INVALID_NUM_ARGS);
+        send_header(sender_fd, version, content_size);
+        send(sender_fd, INVALID_NUM_ARGS, content_size, 0);
         return;
     }
 
-    if(strlen(username) > MAX_USERNAME_SIZE)
-    {
-        send(sender_fd, USERNAME_TOO_LONG, strlen(USERNAME_TOO_LONG), 0);
-        return;
-    }
+    // Removed the check for username length as it's now enforced by sscanf
 
-    for(int i = 0; i < MAX_CLIENTS; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(strcmp(clients[i].username, username) == 0)
+        if (strcmp(clients[i].username, username) == 0)
         {
-            send(sender_fd, USERNAME_FAILURE, strlen(USERNAME_FAILURE), 0);
+            content_size = strlen(USERNAME_FAILURE);
+            send_header(sender_fd, version, content_size);
+            send(sender_fd, USERNAME_FAILURE, content_size, 0);
             return;
         }
     }
 
-    for(int i = 0; i < MAX_CLIENTS; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(sender_fd == clients[i].client_socket)
+        if (sender_fd == clients[i].client_socket)
         {
-            snprintf(clients[i].username, MAX_USERNAME_SIZE, "%s", username);
+            strncpy(clients[i].username, username, MAX_USERNAME_SIZE - 1); // Use strncpy to prevent overflow
+            clients[i].username[MAX_USERNAME_SIZE - 1] = '\0'; // Ensure null termination
             break;
         }
     }
 
-    sprintf(response, "%s%s.\n", USERNAME_SUCCESS, username);
-    send(sender_fd, response, strlen(response), 0);
+    snprintf(response, sizeof(response), "%s%s.\n", USERNAME_SUCCESS, username);
+    content_size = (uint16_t)strlen(response);
+    send_header(sender_fd, version, content_size);
+    send(sender_fd, response, content_size, 0);
 }
+
 
 void direct_message(int sender_fd, const char *buffer)
 {
-    // char response[BUFFER_SIZE];
     char command[BASE_TEN];
     char receiver[MAX_USERNAME_SIZE + 1];
     char message[BUFFER_SIZE];
-    char sent_message[BUFFER_SIZE];
-    //    int  receiver_fd = 0;
-    //    int  receiver_fd = 0;
+    char sent_message[MESSAGE_SIZE]; // Adjust the size to accommodate the maximum possible message length
     int sender_id;
+    uint16_t content_size;
+    uint8_t version = PROTOCOL_VERSION;
 
-    if(sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
+    if (sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
     {
-        send(sender_fd, INVALID_NUM_ARGS, strlen(INVALID_NUM_ARGS), 0);
+        content_size = strlen(INVALID_NUM_ARGS);
+        // Send the protocol header
+        send_header(sender_fd, version, content_size);
+        // Send the response
+        send(sender_fd, INVALID_NUM_ARGS, content_size, 0);
         return;
     }
 
-    for(sender_id = 0; sender_id < MAX_CLIENTS; sender_id++)
+    for (sender_id = 0; sender_id < MAX_CLIENTS; sender_id++)
     {
-        if(clients[sender_id].client_socket == sender_fd)
+        if (clients[sender_id].client_socket == sender_fd)
         {
             break;
         }
     }
 
-    for(int i = 0; i < MAX_CLIENTS; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if(strcmp(clients[i].username, receiver) == 0)
+        if (strcmp(clients[i].username, receiver) == 0)
         {
-            if(sender_id == i)
+            if (sender_id == i)
             {
-                sprintf(sent_message, "[Note] %s: %s\n", clients[sender_id].username, message);
+                snprintf(sent_message, sizeof(sent_message), "[Note] %s: %s\n", clients[sender_id].username, message);
             }
             else
             {
-                sprintf(sent_message, "[Direct] %s: %s\n", clients[sender_id].username, message);
+                snprintf(sent_message, sizeof(sent_message), "[Direct] %s: %s\n", clients[sender_id].username, message);
             }
 
-            send(clients[i].client_socket, sent_message, strlen(sent_message), 0);
+            content_size = (uint16_t)strlen(sent_message);
+            // Send the protocol header
+            send_header(clients[i].client_socket, version, content_size);
+            // Send the direct message
+            send(clients[i].client_socket, sent_message, content_size, 0);
             return;
         }
     }
 
-    send(sender_fd, INVALID_RECEIVER, strlen(INVALID_RECEIVER), 0);
+    content_size = strlen(INVALID_RECEIVER);
+    // Send the protocol header
+    send_header(sender_fd, version, content_size);
+    // Send the response
+    send(sender_fd, INVALID_RECEIVER, content_size, 0);
 }
+
 
 void free_usernames(void)
 {

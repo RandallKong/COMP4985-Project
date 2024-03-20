@@ -68,9 +68,9 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     admin_setup_signal_handler();
 
     // Create a pipe for communication between the admin server and the group chat server
-    if(pipe2(pipe_fds, O_CLOEXEC) == -1)
+    if(pipe(pipe_fds) == -1)
     {
-        perror("pipe2");
+        perror("pipe");
         exit(EXIT_FAILURE);
     }
 
