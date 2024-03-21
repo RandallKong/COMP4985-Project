@@ -344,7 +344,6 @@ static void handle_connection(int sockfd)
         {
             char    client_buffer[BUFFER_SIZE];
             size_t  content_length;
-            uint8_t sender;
             uint8_t version;
             if(fgets(client_buffer, sizeof(client_buffer), stdin) == NULL)
             {

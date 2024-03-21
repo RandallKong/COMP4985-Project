@@ -1,6 +1,5 @@
 #ifndef SERVER_SERVER_H
 #define SERVER_SERVER_H
-#include "protocol.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -38,7 +37,7 @@ int  handle_new_server_manager(int server_socket, struct sockaddr_storage *clien
 void read_from_pipe(int pipe_fd, int server_manager_socket);
 
 // GroupChat Methods
-void *handle_client(void *arg);
+void *handle_client(const void *arg);
 void  start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd);
 void  free_usernames(void);
 // void         print_users(void);

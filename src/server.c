@@ -1,19 +1,23 @@
 #include "../include/server.h"
 #include "../include/protocol.h"
 
-void *handle_client(void *arg)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-function-type-strict"
+
+void *handle_client(const void *arg)
 {
+#pragma clang diagnostic pop
     const struct ClientInfo *client_info     = (const struct ClientInfo *)arg;
     int                      client_socket   = client_info->client_socket;
     int                      client_index    = client_info->client_index;
     const char              *client_username = client_info->username;
     char                     buffer[BUFFER_SIZE];
-    ssize_t                  bytes_received;
     uint16_t                 content_size;
     uint8_t                  version = PROTOCOL_VERSION;
 
     while(1)
     {
+        ssize_t bytes_received;
         // Read the protocol header
         if(read_header(client_socket, &version, &content_size) <= 0)
         {
@@ -166,13 +170,15 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
 
             // Create a new thread to handle the client
             client_info = &clients[client_index];    // Pass the address of the struct in the array
-            if(pthread_create(&tid, NULL, handle_client, (void *)client_info) != 0)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-function-type"
+            if(pthread_create(&tid, NULL, (void *(*)(void *))handle_client, (void *)client_info) != 0)
             {
                 perror("Thread creation failed");
                 close(client_socket);
                 continue;
             }
-
+#pragma clang diagnostic pop
             pthread_detach(tid);
         }
     }
