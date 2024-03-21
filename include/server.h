@@ -1,5 +1,6 @@
 #ifndef SERVER_SERVER_H
 #define SERVER_SERVER_H
+#include "protocol.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -73,7 +74,6 @@ void direct_message(int sender_fd, const char *buffer);
 #define INVALID_NUM_ARGS "Server: Error! Invalid # Arguments. /h for command list.\n"
 #define INVALID_RECEIVER "Server: Non Existent Receiver\n"
 #define USERNAME_TOO_LONG "Server: Error, username too long. 15 is the MAX.\n"
-#include "protocol.h"
 
 struct ClientInfo
 {

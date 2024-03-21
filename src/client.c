@@ -2,18 +2,14 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <netdb.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <signal.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 static void setup_signal_handler(void);
@@ -315,7 +311,7 @@ static void handle_connection(int sockfd)
         // Check if there is a message from the server or other clients
         if(FD_ISSET(sockfd, &readfds))
         {
-            uint8_t  version, sender;
+            uint8_t  version;
             uint16_t content_size;
             char     server_buffer[BUFFER_SIZE];
             ssize_t  bytes_received;

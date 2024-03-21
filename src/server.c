@@ -1,20 +1,21 @@
 #include "../include/server.h"
+#include "../include/protocol.h"
 
 void *handle_client(void *arg)
 {
-    const struct ClientInfo *client_info = (const struct ClientInfo *)arg;
-    int client_socket = client_info->client_socket;
-    int client_index = client_info->client_index;
-    const char *client_username = client_info->username;
-    uint8_t version, sender;
-    char buffer[BUFFER_SIZE];
-    ssize_t bytes_received;
+    const struct ClientInfo *client_info     = (const struct ClientInfo *)arg;
+    int                      client_socket   = client_info->client_socket;
+    int                      client_index    = client_info->client_index;
+    const char              *client_username = client_info->username;
+    char                     buffer[BUFFER_SIZE];
+    ssize_t                  bytes_received;
+    uint16_t                 content_size;
+    uint8_t                  version = PROTOCOL_VERSION;
 
-    while (1)
+    while(1)
     {
-        uint16_t content_size;
         // Read the protocol header
-        if (read_header(client_socket, &version, &content_size) <= 0)
+        if(read_header(client_socket, &version, &content_size) <= 0)
         {
             printf("%s left the chat.\n", client_username);
             break;
@@ -22,7 +23,7 @@ void *handle_client(void *arg)
 
         // Read the actual message content
         bytes_received = recv(client_socket, buffer, content_size, 0);
-        if (bytes_received <= 0)
+        if(bytes_received <= 0)
         {
             printf("%s left the chat.\n", client_username);
             break;
@@ -45,7 +46,6 @@ void *handle_client(void *arg)
 
     pthread_exit(NULL);
 }
-
 
 void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd)
 {
@@ -294,17 +294,18 @@ void send_user_list(int sender_fd)
     // Send user_list to the sender_fd
     send(sender_fd, user_list, content_size, 0);
 }
+
 void set_username(int sender_fd, const char *buffer)
 {
-    char command[BASE_TEN];
-    char username[MAX_USERNAME_SIZE]; // Adjusted size to match the maximum username size
-    char nothing[BUFFER_SIZE]; // Buffer to capture any extra input
-    char response[BUFFER_SIZE];
+    char     command[BASE_TEN];
+    char     username[MAX_USERNAME_SIZE];    // Adjusted size to match the maximum username size
+    char     nothing[BUFFER_SIZE];           // Buffer to capture any extra input
+    char     response[BUFFER_SIZE];
     uint16_t content_size;
-    uint8_t version = PROTOCOL_VERSION;
+    uint8_t  version = PROTOCOL_VERSION;
 
     // Adjusted the sscanf format string to limit the username size
-    if (sscanf(buffer, "/%9s %14s %999s", command, username, nothing) != 2)
+    if(sscanf(buffer, "/%9s %14s %999s", command, username, nothing) != 2)
     {
         content_size = strlen(INVALID_NUM_ARGS);
         send_header(sender_fd, version, content_size);
@@ -314,9 +315,9 @@ void set_username(int sender_fd, const char *buffer)
 
     // Removed the check for username length as it's now enforced by sscanf
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
+    for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (strcmp(clients[i].username, username) == 0)
+        if(strcmp(clients[i].username, username) == 0)
         {
             content_size = strlen(USERNAME_FAILURE);
             send_header(sender_fd, version, content_size);
@@ -325,12 +326,12 @@ void set_username(int sender_fd, const char *buffer)
         }
     }
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
+    for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (sender_fd == clients[i].client_socket)
+        if(sender_fd == clients[i].client_socket)
         {
-            strncpy(clients[i].username, username, MAX_USERNAME_SIZE - 1); // Use strncpy to prevent overflow
-            clients[i].username[MAX_USERNAME_SIZE - 1] = '\0'; // Ensure null termination
+            strncpy(clients[i].username, username, MAX_USERNAME_SIZE - 1);    // Use strncpy to prevent overflow
+            clients[i].username[MAX_USERNAME_SIZE - 1] = '\0';                // Ensure null termination
             break;
         }
     }
@@ -341,18 +342,17 @@ void set_username(int sender_fd, const char *buffer)
     send(sender_fd, response, content_size, 0);
 }
 
-
 void direct_message(int sender_fd, const char *buffer)
 {
-    char command[BASE_TEN];
-    char receiver[MAX_USERNAME_SIZE + 1];
-    char message[BUFFER_SIZE];
-    char sent_message[MESSAGE_SIZE]; // Adjust the size to accommodate the maximum possible message length
-    int sender_id;
+    char     command[BASE_TEN];
+    char     receiver[MAX_USERNAME_SIZE + 1];
+    char     message[BUFFER_SIZE];
+    char     sent_message[MESSAGE_SIZE];    // Adjust the size to accommodate the maximum possible message length
+    int      sender_id;
     uint16_t content_size;
-    uint8_t version = PROTOCOL_VERSION;
+    uint8_t  version = PROTOCOL_VERSION;
 
-    if (sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
+    if(sscanf(buffer, "/%9s %14s %1023[^\n]", command, receiver, message) != 3)
     {
         content_size = strlen(INVALID_NUM_ARGS);
         // Send the protocol header
@@ -362,19 +362,19 @@ void direct_message(int sender_fd, const char *buffer)
         return;
     }
 
-    for (sender_id = 0; sender_id < MAX_CLIENTS; sender_id++)
+    for(sender_id = 0; sender_id < MAX_CLIENTS; sender_id++)
     {
-        if (clients[sender_id].client_socket == sender_fd)
+        if(clients[sender_id].client_socket == sender_fd)
         {
             break;
         }
     }
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
+    for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (strcmp(clients[i].username, receiver) == 0)
+        if(strcmp(clients[i].username, receiver) == 0)
         {
-            if (sender_id == i)
+            if(sender_id == i)
             {
                 snprintf(sent_message, sizeof(sent_message), "[Note] %s: %s\n", clients[sender_id].username, message);
             }
@@ -398,7 +398,6 @@ void direct_message(int sender_fd, const char *buffer)
     // Send the response
     send(sender_fd, INVALID_RECEIVER, content_size, 0);
 }
-
 
 void free_usernames(void)
 {
