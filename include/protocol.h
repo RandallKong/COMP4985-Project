@@ -1,6 +1,7 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
+#include <malloc.h>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>

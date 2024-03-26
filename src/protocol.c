@@ -23,19 +23,27 @@ int send_header(int sockfd, uint8_t version, uint16_t content_size)
     return 0;
 }
 
-// Function to send message with protocol
+// Function to send message with protocol header and content
 int send_with_protocol(int sockfd, uint8_t version, const char *message)
 {
-    uint16_t content_size;
-    content_size = (uint16_t)strlen(message);
+    uint16_t content_size = (uint16_t)strlen(message);
+    ssize_t  sent_bytes;
 
+    printf("Sending message with version: %u, content size: %u\n", version, content_size);
+    printf("Message content: %s\n", message);
+
+    // Send protocol header first
     if(send_header(sockfd, version, content_size) == -1)
     {
+        perror("send_with_protocol: send_header failed");
         return -1;
     }
 
-    if(send(sockfd, message, content_size, 0) < content_size)
+    // Send message content
+    sent_bytes = send(sockfd, message, content_size, 0);
+    if(sent_bytes < 0 || (uint16_t)sent_bytes != content_size)
     {
+        perror("send_with_protocol: send failed");
         return -1;
     }
 
@@ -70,16 +78,22 @@ int read_header(int sockfd, uint8_t *version, uint16_t *content_size)
     return 0;
 }
 
-// Function to read message with protocol
+// read_with_protocol function
 ssize_t read_with_protocol(int sockfd, uint8_t *version, char *buffer, size_t buffer_size)
 {
     uint16_t content_size = 0;
     ssize_t  bytes_received;
 
-    if(read_header(sockfd, version, &content_size) == -1)
+    // Read the protocol header
+    int header_status = read_header(sockfd, version, &content_size);
+    if(header_status == -1)
     {
+        perror("read_with_protocol: read_header failed");
         return -1;
     }
+
+    // Log the incoming header information
+    printf("Received header with version: %u, content size: %u\n", *version, content_size);
 
     if(content_size >= buffer_size)
     {
@@ -87,12 +101,17 @@ ssize_t read_with_protocol(int sockfd, uint8_t *version, char *buffer, size_t bu
         return -1;
     }
 
+    // Read the actual message content
     bytes_received = recv(sockfd, buffer, content_size, 0);
     if(bytes_received <= 0)
     {
+        perror("read_with_protocol: recv failed");
         return -1;
     }
 
-    buffer[bytes_received] = '\0';    // Null-terminate the message
-    return bytes_received;            // Return the length of the received message
+    // Null-terminate and log the received message
+    buffer[bytes_received] = '\0';
+    printf("Received message content: %s\n", buffer);
+
+    return bytes_received;
 }

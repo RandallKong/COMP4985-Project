@@ -36,7 +36,7 @@ static void socket_close(int sockfd);
 #define IP_ADDR_INDEX 1
 #define PORT_INDEX 2
 #define BASE_TEN 10
-#define BUFFER_SIZE 1000
+#define BUFFER_SIZE 2000
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile sig_atomic_t exit_flag = 0;
@@ -311,20 +311,12 @@ static void handle_connection(int sockfd)
         // Check if there is a message from the server or other clients
         if(FD_ISSET(sockfd, &readfds))
         {
-            uint8_t  version;
-            uint16_t content_size;
-            char     server_buffer[BUFFER_SIZE];
-            ssize_t  bytes_received;
+            uint8_t version;
+            char    server_buffer[BUFFER_SIZE];
+            ssize_t bytes_received;
 
-            // Read the protocol header
-            if(read_header(sockfd, &version, &content_size) == -1)
-            {
-                perror("Error reading header");
-                break;
-            }
-
-            // Read the actual message content
-            bytes_received = recv(sockfd, server_buffer, content_size, 0);
+            // Read the message with protocol
+            bytes_received = read_with_protocol(sockfd, &version, server_buffer, BUFFER_SIZE);
 
             if(bytes_received <= 0)
             {
@@ -332,10 +324,8 @@ static void handle_connection(int sockfd)
                 break;
             }
 
-            server_buffer[bytes_received] = '\0';
-
             // Print the received message along with the header information
-            printf("Version: %u, Content size: %u, Message: %s\n", version, content_size, server_buffer);
+            printf("Version: %u, Message: %s\n", version, server_buffer);
             fflush(stdout);
         }
 
@@ -343,8 +333,9 @@ static void handle_connection(int sockfd)
         if(FD_ISSET(STDIN_FILENO, &readfds))
         {
             char    client_buffer[BUFFER_SIZE];
+            uint8_t version = PROTOCOL_VERSION;
             size_t  content_length;
-            uint8_t version;
+
             if(fgets(client_buffer, sizeof(client_buffer), stdin) == NULL)
             {
                 // Ctrl-D was pressed, causing EOF
@@ -352,23 +343,12 @@ static void handle_connection(int sockfd)
                 break;
             }
 
-            content_length = strlen(client_buffer);
             // Trim the newline character if present
-            if(content_length > 0 && client_buffer[content_length - 1] == '\n')
-            {
-                client_buffer[--content_length] = '\0';    // Replace newline with null terminator
-            }
+            content_length                = strcspn(client_buffer, "\n");
+            client_buffer[content_length] = '\0';
 
-            // Send the protocol header
-            version = PROTOCOL_VERSION;
-            if(send_header(sockfd, version, (uint16_t)content_length) == -1)
-            {
-                perror("Error sending header");
-                break;
-            }
-
-            // Send the actual content
-            if(send(sockfd, client_buffer, content_length, 0) == -1)
+            // Send the message with protocol
+            if(send_with_protocol(sockfd, version, client_buffer) == -1)
             {
                 perror("Error sending message");
                 break;

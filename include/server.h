@@ -40,7 +40,7 @@ void read_from_pipe(int pipe_fd, int server_manager_socket);
 void *handle_client(const void *arg);
 void  start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd);
 void  free_usernames(void);
-// void         print_users(void);
+//  void         print_users(void);
 void handle_message(const char *buffer, int sender_fd);
 void send_user_list(int sender_fd);
 void set_username(int sender_fd, const char *buffer);
