@@ -49,7 +49,7 @@ void direct_message(int sender_fd, const char *buffer);
 // GENERAL USE
 #define BASE_TEN 10
 #define MAX_USERNAME_SIZE 15
-#define MAX_CLIENTS 32
+#define MAX_CLIENTS 5
 #define TWO_FIFTY_SIX 256
 #define BUFFER_SIZE 1024
 #define MESSAGE_SIZE (BUFFER_SIZE + MAX_USERNAME_SIZE + BASE_TEN)

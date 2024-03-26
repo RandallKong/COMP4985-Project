@@ -132,15 +132,19 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
                     break;
                 }
             }
-            // x
-            //             if(client_index == -1)
-            //             {
-            //                 const char *rejection_message = SERVER_FULL;
-            //                 send(client_socket, rejection_message, strlen(rejection_message), 0);
-            //                 close(client_socket);
-            //                 pthread_mutex_unlock(&clients_mutex);
-            //                 continue;    // Continue listening for connections
-            //             }
+
+            if(client_index == -1)
+            {
+                const char *rejection_message = SERVER_FULL;
+                // Use send_with_protocol to include the protocol header
+                if(send_with_protocol(client_socket, PROTOCOL_VERSION, rejection_message) == -1)
+                {
+                    perror("Error sending rejection message");
+                }
+                close(client_socket);
+                pthread_mutex_unlock(&clients_mutex);
+                continue;    // Continue listening for connections
+            }
 
             printf("New connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
             printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
