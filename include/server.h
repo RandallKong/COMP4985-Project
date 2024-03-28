@@ -53,17 +53,20 @@ void direct_message(int sender_fd, const char *buffer);
 #define TWO_FIFTY_SIX 256
 #define BUFFER_SIZE 1024
 #define MESSAGE_SIZE (BUFFER_SIZE + MAX_USERNAME_SIZE + BASE_TEN)
-// #define UINT16_MAX 65535
 
 // SERVER MANAGER WRAPPER MESSAGES
 #define PASSKEY "hellyabrother"
 #define WELCOME_STARTUP "Initializing Server Wrapper"
+#define WELCOME_SERVER_MANAGER "Initializing Server Manager connection\n"
 #define OPTION_NO_SM "Start the Client Server without SERVER MANAGER"
 #define OPTION_WITH_SM "Listen for SERVER MANAGER"
 #define INCORRECT_PASSKEY_MSG "Incorrect passkey. Attempts remaining: %d\n"
 #define AUTH_FAILED_MSG "Passkey authentication failed. Closing connection.\n"
 #define PASSKEY_MATCHED_MSG "Passkey matched. Connection authorized.\n\n"
+#define WELCOME_SERVER_MSG "Welcome Server Manager\n </s> Would you like to start group chat server \n </q>Would you like to stop group chat server\n"
 #define STARTING_SERVER_MSG "Starting server\n"
+#define STOPPING_SERVER_MSG "Shutting down group chat server\n"
+
 #define MAX_INPUT_LENGTH 256
 
 // CLIENT SERVER MESSAGES

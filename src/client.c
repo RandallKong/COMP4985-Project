@@ -85,10 +85,6 @@ int main(int argc, char *argv[])
 
     setup_signal_handler();
 
-    // Sets the receiving end sockfd to either client_sockfd or host_sockfd
-    // If -a is set, receiver is client, If -c is set, receiver is host
-    //    receiver_sockfd = listen_arg ? client_sockfd : host_sockfd;
-
     write_thread_result = pthread_create(&write_message_thread, NULL, write_message, (void *)&sock_fd);
     read_thread_result  = pthread_create(&read_message_thread, NULL, read_message, (void *)&sock_fd);
 

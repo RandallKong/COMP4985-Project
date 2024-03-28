@@ -91,7 +91,7 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
                 continue;    // Interrupted by signal, continue the loop
             }
             perror("select");
-            exit(EXIT_FAILURE);
+//            exit(EXIT_FAILURE);
         }
 
         // Check if there is a new connection and no active server manager connection
@@ -144,7 +144,7 @@ void handle_prompt(char **address, char **port_str)
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("192.168.0.247");
+        *address = strdup("127.0.0.1");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -160,10 +160,6 @@ void handle_prompt(char **address, char **port_str)
         *port_str = strdup("8080");
         printf("No input detected. Defaulting to port: %s\n", *port_str);
     }
-
-    // Print the inputted IP address and port
-    printf("IP Address: %s\n", *address);
-    printf("Port: %s\n", *port_str);
 }
 
 void admin_setup_signal_handler(void)
@@ -199,13 +195,13 @@ void admin_sigint_handler(int signum)
 
 int handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port)
 {
-
-    char  passkey_buffer[TWO_FIFTY_SIX];
-    int   attempts        = 0;
-    bool  passkey_matched = false;
-    int   sm_socket       = accept(server_socket, (struct sockaddr *)client_addr, client_addr_len);
-    pid_t pid;
-
+    char    passkey_buffer[TWO_FIFTY_SIX];
+    int     attempts        = 0;
+    bool    passkey_matched = false;
+    int     sm_socket       = accept(server_socket, (struct sockaddr *)client_addr, client_addr_len);
+    pid_t   pid             = 0;
+    uint8_t version         = PROTOCOL_VERSION;
+    char    msg[BUFFER_SIZE];
     if(sm_socket < 0)
     {
         perror("accept");
@@ -213,15 +209,16 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     }
 
     printf("New connection from %s:%d\n", inet_ntoa(((struct sockaddr_in *)client_addr)->sin_addr), ntohs(((struct sockaddr_in *)client_addr)->sin_port));
+    send_with_protocol(sm_socket, version, WELCOME_SERVER_MANAGER);
 
     // Authenticate the server manager connection
     while(attempts < 3 && !passkey_matched)
     {
-        uint8_t version;
         ssize_t bytes_received;
 
         // Read the message with protocol
         bytes_received = read_with_protocol(sm_socket, &version, passkey_buffer, BUFFER_SIZE);
+
         if(bytes_received <= 0)
         {
             printf("Connection closed or error occurred.\n");
@@ -237,65 +234,91 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
 
         if(strcmp(passkey_buffer, PASSKEY) == 0)
         {
-            char msg[BUFFER_SIZE];
             passkey_matched = true;
-            snprintf(msg, sizeof(msg), PASSKEY_MATCHED_MSG STARTING_SERVER_MSG);
-            if(send_with_protocol(sm_socket, PROTOCOL_VERSION, msg) == -1)
-            {
-                perror("Error sending passkey matched message with protocol");
-            }
+            snprintf(msg, sizeof(msg), PASSKEY_MATCHED_MSG);
+            send_with_protocol(sm_socket, version, msg);
         }
         else
         {
-            char msg[BUFFER_SIZE];
             snprintf(msg, sizeof(msg), INCORRECT_PASSKEY_MSG, 2 - attempts);
-            printf("%s", msg);
-
-            // Send the message with protocol
-            if(send_with_protocol(sm_socket, version, msg) == -1)
-            {
-                perror("Error sending passkey attempt message");
-            }
+            send_with_protocol(sm_socket, version, msg);
             attempts++;
         }
     }
 
+    version = PROTOCOL_VERSION;
     if(!passkey_matched)
     {
-        uint8_t version = PROTOCOL_VERSION;
-        char msg[BUFFER_SIZE];
-        sleep(1);
         snprintf(msg, sizeof(msg), AUTH_FAILED_MSG);
-        if(send_with_protocol(sm_socket, version, msg) == -1)
-        {
-            perror("Error sending authentication failed message with protocol");
-        }
+        send_with_protocol(sm_socket, version, msg);
         close(sm_socket);
         return -1;
     }
+    snprintf(msg, sizeof(msg), WELCOME_SERVER_MSG);
+    send_with_protocol(sm_socket, version, msg);
 
-    // Start the group chat server as a child process
-    pid = fork();
-    if(pid == 0)
+    // Listen for commands to start or stop the group chat server
+    while(1)
     {
-        // Child process: Start the group chat server
-        close(pipe_fds[0]);                                                \
-        start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
-        close(pipe_fds[1]);
-        exit(EXIT_SUCCESS);
-    }
-    else if(pid > 0)
-    {
-        close(pipe_fds[1]);
-    }
-    else
-    {
-        perror("fork");
-        close(sm_socket);
-        exit(EXIT_FAILURE);
+        char    command_buffer[BUFFER_SIZE];
+        uint8_t command_version;
+        ssize_t command_received;
+
+        // Read the command with protocol
+        command_received = read_with_protocol(sm_socket, &command_version, command_buffer, BUFFER_SIZE);
+
+        if(command_received <= 0)
+        {
+            printf("Connection closed or error occurred.\n");
+            break;
+        }
+
+        if(strcmp(command_buffer, "/s\n") == 0 && pid == 0)    // Start the server
+        {
+            send_with_protocol(sm_socket, version, STARTING_SERVER_MSG);
+            pid = fork();
+            if(pid == 0)
+            {
+                close(pipe_fds[0]);
+                start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
+                close(pipe_fds[1]);
+                exit(EXIT_SUCCESS);
+            }
+            else if(pid > 0)
+            {
+                close(pipe_fds[1]);
+                printf("Group chat server started.\n");
+            }
+            else
+            {
+                perror("Failed to start group chat server");
+            }
+        }
+        else if(strcmp(command_buffer, "/q\n") == 0 && pid > 0)    // Stop the server
+        {
+            kill(pid, SIGTERM);
+            waitpid(pid, NULL, 0);
+            pid = 0;
+            printf(STOPPING_SERVER_MSG);
+            if(send_with_protocol(sm_socket, version, STOPPING_SERVER_MSG) == -1)
+            {
+                perror("Error sending stop server message with protocol");
+            }
+        }
+        else
+        {
+            printf("Unknown command: %s\n", command_buffer);
+        }
     }
 
-    return sm_socket;    // Return the server manager socket
+    // Clean up before exiting
+    if(pid > 0)
+    {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+    }
+    close(sm_socket);
+    return sm_socket;
 }
 
 void read_from_pipe(int pipe_fd, int server_manager_socket)
