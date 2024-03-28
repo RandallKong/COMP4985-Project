@@ -145,16 +145,16 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
 
 void handle_prompt(char **address, char **port_str)
 {
-    printf("\nEnter the IP address to bind the server (default 127.0.0.1): ");
+    printf("\nEnter the IP address to bind the server (default): ");
     *address = malloc(MAX_INPUT_LENGTH * sizeof(char));
     fgets(*address, MAX_INPUT_LENGTH, stdin);
     (*address)[strcspn(*address, "\n")] = 0;    // Remove newline character
 
-    // Default to 127.0.0.1 if no input is detected
+    // Default to 192.168.0.247 if no input is detected
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("127.0.0.1");
+        *address = strdup("192.168.0.247");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -226,17 +226,23 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     // Authenticate the server manager connection
     while(attempts < 3 && !passkey_matched)
     {
-        ssize_t bytes_read = recv(new_socket, passkey_buffer, sizeof(passkey_buffer) - 1, 0);
-        if(bytes_read > 0 && passkey_buffer[bytes_read - 1] == '\n')
-        {
-            passkey_buffer[bytes_read - 1] = '\0';
-        }
+        uint8_t version;
+        ssize_t bytes_received;
 
-        if(bytes_read <= 0)
+        // Read the message with protocol
+        bytes_received = read_with_protocol(new_socket, &version, passkey_buffer, BUFFER_SIZE);
+
+        if(bytes_received <= 0)
         {
-            printf("Connection closed or error occurred\n");
+            printf("Connection closed or error occurred.\n");
             close(new_socket);
             return -1;
+        }
+
+        // Remove the newline character if present
+        if(passkey_buffer[bytes_received - 1] == '\n')
+        {
+            passkey_buffer[bytes_received - 1] = '\0';
         }
 
         if(strcmp(passkey_buffer, PASSKEY) == 0)
@@ -286,32 +292,29 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
 
 void read_from_pipe(int pipe_fd, int server_manager_socket)
 {
-    int     received_client_count;
-    ssize_t bytes_read = read(pipe_fd, &received_client_count, sizeof(received_client_count));
+    uint8_t version;
+    char    count_str[BUFFER_SIZE];
+    ssize_t bytes_received;
 
-    if(bytes_read > 0)
+    // Receive the client count from the group chat server with protocol
+    bytes_received = read_with_protocol(pipe_fd, &version, count_str, BUFFER_SIZE);
+
+    if(bytes_received > 0)
     {
-        char    count_str[BASE_TEN];    // Enough to hold all digits of an int
-        ssize_t bytes_sent;
-        printf("Received client count from group chat server: %d\n", received_client_count);
+        printf("Received client count from group chat server: %s\n", count_str);
 
-        // Send this information to the server manager
-        sprintf(count_str, "%d", received_client_count);
-        bytes_sent = send(server_manager_socket, count_str, strlen(count_str), 0);
-        if(bytes_sent < 0)
+        // Send this information to the server manager with protocol
+        if(send_with_protocol(server_manager_socket, PROTOCOL_VERSION, count_str) == -1)
         {
-            perror("Failed to send client count to server manager");
+            perror("Failed to send client count to server manager with protocol");
         }
     }
-    else if(bytes_read == 0)
+    else if(bytes_received == 0)
     {
         printf("Group chat server closed the pipe.\n");
     }
     else
     {
-        if(errno != EINTR)
-        {
-            perror("Failed to read from pipe");
-        }
+        perror("Failed to read from pipe with protocol");
     }
 }

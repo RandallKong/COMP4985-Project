@@ -30,7 +30,7 @@ int send_with_protocol(int sockfd, uint8_t version, const char *message)
     ssize_t  sent_bytes;
 
     printf("Sending message with version: %u, content size: %u\n", version, content_size);
-    printf("Message content: %s\n", message);
+    //    printf("Message content: %s\n", message);
 
     // Send protocol header first
     if(send_header(sockfd, version, content_size) == -1)
@@ -111,7 +111,7 @@ ssize_t read_with_protocol(int sockfd, uint8_t *version, char *buffer, size_t bu
 
     // Null-terminate and log the received message
     buffer[bytes_received] = '\0';
-    printf("Received message content: %s\n", buffer);
+    //    printf("Received message content: %s\n", buffer);
 
     return bytes_received;
 }

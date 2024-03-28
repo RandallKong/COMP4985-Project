@@ -304,7 +304,7 @@ static void handle_connection(int sockfd)
 
         if(activity < 0)
         {
-            //            perror("Select error");
+            perror("Select error");
             break;
         }
 
