@@ -108,16 +108,6 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
             }
         }
 
-        // Check if there is activity on the server manager socket
-        //        if(server_manager_socket > 0 && FD_ISSET(server_manager_socket, &readfds))
-        //        {
-        //            // Handle activity on the server manager socket (e.g., receiving commands)
-        //            // If the connection is closed, remove the socket from the set and reset the variable
-        //            FD_CLR(server_manager_socket, &readfds);
-        //            close(server_manager_socket);
-        //            server_manager_socket = 0;
-        //        }
-
         // Check if there is data to read from the pipe
         if(FD_ISSET(pipe_fds[0], &readfds))
         {
@@ -209,13 +199,14 @@ void admin_sigint_handler(int signum)
 
 int handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port)
 {
+
     char  passkey_buffer[TWO_FIFTY_SIX];
     int   attempts        = 0;
     bool  passkey_matched = false;
-    int   new_socket      = accept(server_socket, (struct sockaddr *)client_addr, client_addr_len);
+    int   sm_socket       = accept(server_socket, (struct sockaddr *)client_addr, client_addr_len);
     pid_t pid;
 
-    if(new_socket < 0)
+    if(sm_socket < 0)
     {
         perror("accept");
         return -1;
@@ -230,12 +221,11 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
         ssize_t bytes_received;
 
         // Read the message with protocol
-        bytes_received = read_with_protocol(new_socket, &version, passkey_buffer, BUFFER_SIZE);
-
+        bytes_received = read_with_protocol(sm_socket, &version, passkey_buffer, BUFFER_SIZE);
         if(bytes_received <= 0)
         {
             printf("Connection closed or error occurred.\n");
-            close(new_socket);
+            close(sm_socket);
             return -1;
         }
 
@@ -247,20 +237,40 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
 
         if(strcmp(passkey_buffer, PASSKEY) == 0)
         {
+            char msg[BUFFER_SIZE];
             passkey_matched = true;
-            printf("Passkey matched. Connection authorized.\n");
+            snprintf(msg, sizeof(msg), PASSKEY_MATCHED_MSG STARTING_SERVER_MSG);
+            if(send_with_protocol(sm_socket, PROTOCOL_VERSION, msg) == -1)
+            {
+                perror("Error sending passkey matched message with protocol");
+            }
         }
         else
         {
-            printf("Incorrect passkey. Attempts remaining: %d\n", 2 - attempts);
+            char msg[BUFFER_SIZE];
+            snprintf(msg, sizeof(msg), INCORRECT_PASSKEY_MSG, 2 - attempts);
+            printf("%s", msg);
+
+            // Send the message with protocol
+            if(send_with_protocol(sm_socket, version, msg) == -1)
+            {
+                perror("Error sending passkey attempt message");
+            }
             attempts++;
         }
     }
 
     if(!passkey_matched)
     {
-        printf("Passkey authentication failed. Closing connection.\n");
-        close(new_socket);
+        uint8_t version = PROTOCOL_VERSION;
+        char msg[BUFFER_SIZE];
+        sleep(1);
+        snprintf(msg, sizeof(msg), AUTH_FAILED_MSG);
+        if(send_with_protocol(sm_socket, version, msg) == -1)
+        {
+            perror("Error sending authentication failed message with protocol");
+        }
+        close(sm_socket);
         return -1;
     }
 
@@ -269,38 +279,37 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     if(pid == 0)
     {
         // Child process: Start the group chat server
-        close(pipe_fds[0]);                                                 // Close the read end of the pipe in the child
-        start_groupChat_server(addr, port + 1, new_socket, pipe_fds[1]);    // Pass the write end of the pipe
-        close(pipe_fds[1]);                                                 // Close the write end of the pipe after use
+        close(pipe_fds[0]);                                                \
+        start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
+        close(pipe_fds[1]);
         exit(EXIT_SUCCESS);
     }
     else if(pid > 0)
     {
-        close(pipe_fds[1]);    // Close the write end of the pipe in the parent
-        // Optionally close new_socket if it's not used in the parent process
-        // close(new_socket);
+        close(pipe_fds[1]);
     }
     else
     {
         perror("fork");
-        close(new_socket);
+        close(sm_socket);
         exit(EXIT_FAILURE);
     }
 
-    return new_socket;    // Return the server manager socket
+    return sm_socket;    // Return the server manager socket
 }
 
 void read_from_pipe(int pipe_fd, int server_manager_socket)
 {
-    uint8_t version;
-    char    count_str[BUFFER_SIZE];
-    ssize_t bytes_received;
+    int     received_client_count;
+    ssize_t bytes_read;
 
-    // Receive the client count from the group chat server with protocol
-    bytes_received = read_with_protocol(pipe_fd, &version, count_str, BUFFER_SIZE);
+    // Read the client count from the pipe
+    bytes_read = read(pipe_fd, &received_client_count, sizeof(received_client_count));
 
-    if(bytes_received > 0)
+    if(bytes_read > 0)
     {
+        char count_str[BUFFER_SIZE];
+        snprintf(count_str, BUFFER_SIZE, "%d", received_client_count);
         printf("Received client count from group chat server: %s\n", count_str);
 
         // Send this information to the server manager with protocol
@@ -309,12 +318,12 @@ void read_from_pipe(int pipe_fd, int server_manager_socket)
             perror("Failed to send client count to server manager with protocol");
         }
     }
-    else if(bytes_received == 0)
+    else if(bytes_read == 0)
     {
         printf("Group chat server closed the pipe.\n");
     }
     else
     {
-        perror("Failed to read from pipe with protocol");
+        perror("Failed to read from pipe");
     }
 }

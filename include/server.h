@@ -49,7 +49,7 @@ void direct_message(int sender_fd, const char *buffer);
 // GENERAL USE
 #define BASE_TEN 10
 #define MAX_USERNAME_SIZE 15
-#define MAX_CLIENTS 5
+#define MAX_CLIENTS 32
 #define TWO_FIFTY_SIX 256
 #define BUFFER_SIZE 1024
 #define MESSAGE_SIZE (BUFFER_SIZE + MAX_USERNAME_SIZE + BASE_TEN)
@@ -60,6 +60,10 @@ void direct_message(int sender_fd, const char *buffer);
 #define WELCOME_STARTUP "Initializing Server Wrapper"
 #define OPTION_NO_SM "Start the Client Server without SERVER MANAGER"
 #define OPTION_WITH_SM "Listen for SERVER MANAGER"
+#define INCORRECT_PASSKEY_MSG "Incorrect passkey. Attempts remaining: %d\n"
+#define AUTH_FAILED_MSG "Passkey authentication failed. Closing connection.\n"
+#define PASSKEY_MATCHED_MSG "Passkey matched. Connection authorized.\n\n"
+#define STARTING_SERVER_MSG "Starting server\n"
 #define MAX_INPUT_LENGTH 256
 
 // CLIENT SERVER MESSAGES

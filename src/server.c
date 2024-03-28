@@ -584,8 +584,6 @@ void socket_bind(int sockfd, struct sockaddr_storage *addr, in_port_t port)
         exit(EXIT_FAILURE);
     }
 
-    printf("Binding to: %s:%u\n", addr_str, port);
-
     if(bind(sockfd, (struct sockaddr *)addr, addr_len) == -1)
     {
         perror("Binding failed");
