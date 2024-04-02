@@ -9,7 +9,8 @@ ssize_t send_byte(int sockfd, uint8_t byte)
 // Function to send a 16-bit integer in network byte order
 ssize_t send_uint16(int sockfd, uint16_t value)
 {
-    uint16_t net_value = htons(value);    // Convert to network byte order
+    //    uint16_t net_value = htons(value);    // Convert to network byte order
+    uint16_t net_value = ntohs(value);    // Convert to network byte order
     return send(sockfd, &net_value, sizeof(net_value), 0);
 }
 
@@ -29,7 +30,7 @@ int send_with_protocol(int sockfd, uint8_t version, const char *message)
     uint16_t content_size = (uint16_t)strlen(message);
     ssize_t  sent_bytes;
 
-    printf("snd header ver: %u, size: %u\n", version, content_size);
+    printf("snd header| ver: %u, size: %u\n", version, content_size);
     //    printf("Message content: %s\n", message);
 
     // Send protocol header first
@@ -64,6 +65,7 @@ ssize_t recv_uint16(int sockfd, uint16_t *value)
     if(result > 0)
     {
         *value = ntohs(net_value);    // Convert from network byte order
+                                      //        *value = (net_value);    // Convert from network byte order
     }
     return result;
 }

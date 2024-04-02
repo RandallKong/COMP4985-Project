@@ -65,7 +65,7 @@ void direct_message(int sender_fd, const char *buffer);
 #define PASSKEY_MATCHED_MSG "ACCEPTED\n"
 #define WELCOME_SERVER_MSG "Welcome Server Manager\n </s> Would you like to start group chat server \n </q>Would you like to stop group chat server\n"
 #define STARTING_SERVER_MSG "STARTED\n"
-#define STOPPING_SERVER_MSG "SHUTDOWN\n"
+#define STOPPING_SERVER_MSG "STOP\n"
 
 #define MAX_INPUT_LENGTH 256
 

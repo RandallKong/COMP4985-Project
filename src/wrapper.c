@@ -91,7 +91,7 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
                 continue;    // Interrupted by signal, continue the loop
             }
             perror("select");
-//            exit(EXIT_FAILURE);
+            //            exit(EXIT_FAILURE);
         }
 
         // Check if there is a new connection and no active server manager connection
@@ -144,7 +144,7 @@ void handle_prompt(char **address, char **port_str)
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("127.0.0.1");
+        *address = strdup("192.168.0.247");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -209,7 +209,6 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     }
 
     printf("New connection from %s:%d\n", inet_ntoa(((struct sockaddr_in *)client_addr)->sin_addr), ntohs(((struct sockaddr_in *)client_addr)->sin_port));
-    send_with_protocol(sm_socket, version, WELCOME_SERVER_MANAGER);
 
     // Authenticate the server manager connection
     while(attempts < 3 && !passkey_matched)
@@ -273,7 +272,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
             break;
         }
 
-        if(strcmp(command_buffer, "/s\n") == 0 && pid == 0)    // Start the server
+        if(strcmp(command_buffer, "/s") == 0 && pid == 0)    // Start the server
         {
             send_with_protocol(sm_socket, version, STARTING_SERVER_MSG);
             pid = fork();
@@ -294,7 +293,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 perror("Failed to start group chat server");
             }
         }
-        else if(strcmp(command_buffer, "/q\n") == 0 && pid > 0)    // Stop the server
+        else if(strcmp(command_buffer, "/q") == 0 && pid > 0)    // Stop the server
         {
             kill(pid, SIGTERM);
             waitpid(pid, NULL, 0);
