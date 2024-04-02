@@ -62,10 +62,10 @@ void direct_message(int sender_fd, const char *buffer);
 #define OPTION_WITH_SM "Listen for SERVER MANAGER"
 #define INCORRECT_PASSKEY_MSG "Incorrect passkey. Attempts remaining: %d\n"
 #define AUTH_FAILED_MSG "Passkey authentication failed. Closing connection.\n"
-#define PASSKEY_MATCHED_MSG "Passkey matched. Connection authorized.\n\n"
+#define PASSKEY_MATCHED_MSG "ACCEPTED\n"
 #define WELCOME_SERVER_MSG "Welcome Server Manager\n </s> Would you like to start group chat server \n </q>Would you like to stop group chat server\n"
-#define STARTING_SERVER_MSG "Starting server\n"
-#define STOPPING_SERVER_MSG "Shutting down group chat server\n"
+#define STARTING_SERVER_MSG "STARTED\n"
+#define STOPPING_SERVER_MSG "SHUTDOWN\n"
 
 #define MAX_INPUT_LENGTH 256
 
