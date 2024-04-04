@@ -91,7 +91,7 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
                 continue;    // Interrupted by signal, continue the loop
             }
             perror("select");
-            //            exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
         }
 
         // Check if there is a new connection and no active server manager connection
@@ -253,8 +253,6 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
         close(sm_socket);
         return -1;
     }
-    snprintf(msg, sizeof(msg), WELCOME_SERVER_MSG);
-    send_with_protocol(sm_socket, version, msg);
 
     // Listen for commands to start or stop the group chat server
     while(1)
@@ -272,7 +270,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
             break;
         }
 
-        if(strcmp(command_buffer, "/s") == 0 && pid == 0)    // Start the server
+        if((strcmp(command_buffer, "/s") == 0 && pid == 0) || (strcmp(command_buffer, "/s\n") == 0 && pid == 0))    // Start the server
         {
             send_with_protocol(sm_socket, version, STARTING_SERVER_MSG);
             pid = fork();
@@ -293,7 +291,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 perror("Failed to start group chat server");
             }
         }
-        else if(strcmp(command_buffer, "/q") == 0 && pid > 0)    // Stop the server
+        else if((strcmp(command_buffer, "/q") == 0 && pid > 0) || (strcmp(command_buffer, "/q\n") == 0 && pid > 0))    // Stop the server
         {
             kill(pid, SIGTERM);
             waitpid(pid, NULL, 0);
@@ -330,12 +328,14 @@ void read_from_pipe(int pipe_fd, int server_manager_socket)
 
     if(bytes_read > 0)
     {
-        char count_str[BUFFER_SIZE];
+        uint8_t version = PROTOCOL_VERSION;
+        char    count_str[BUFFER_SIZE];
+
         snprintf(count_str, BUFFER_SIZE, "%d", received_client_count);
         printf("Received client count from group chat server: %s\n", count_str);
 
         // Send this information to the server manager with protocol
-        if(send_with_protocol(server_manager_socket, PROTOCOL_VERSION, count_str) == -1)
+        if(send_with_protocol(server_manager_socket, version, count_str) == -1)
         {
             perror("Failed to send client count to server manager with protocol");
         }

@@ -195,8 +195,7 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
             {
                 perror("Failed to write client count to pipe");
             }
-
-            // welcome message
+            printf("client count from gc server:%d", client_count);
 
             // Create a new thread to handle the client
             client_info = &clients[client_index];    // Pass the address of the struct in the array
