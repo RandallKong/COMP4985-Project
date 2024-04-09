@@ -9,7 +9,7 @@ ssize_t send_byte(int sockfd, uint8_t byte)
 // Function to send a 16-bit integer in network byte order
 ssize_t send_uint16(int sockfd, uint16_t value)
 {
-    //    uint16_t net_value = htons(value);    // Convert to network byte order
+//    uint16_t net_value = htons(value);    // Convert to network byte order
     uint16_t net_value = ntohs(value);    // Convert to network byte order
     return send(sockfd, &net_value, sizeof(net_value), 0);
 }
@@ -111,8 +111,14 @@ ssize_t read_with_protocol(int sockfd, uint8_t *version, char *buffer, size_t bu
         return -1;
     }
 
-    // Null-terminate and log the received message
+    // Null-terminate the received message
     buffer[bytes_received] = '\0';
+
+    // Trim newline character if present at the end
+    if(buffer[bytes_received - 1] == '\n')
+    {
+        buffer[bytes_received - 1] = '\0';
+    }
 
     return bytes_received;
 }

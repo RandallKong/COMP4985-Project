@@ -31,14 +31,14 @@ int       socket_accept_connection(int server_fd, struct sockaddr_storage *clien
 void      socket_close(int sockfd);
 
 // Admin Server Methods
-void start_admin_server(struct sockaddr_storage addr, in_port_t port);
-void handle_prompt(char **address, char **port_str);
-int  handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port);
-void read_from_pipe(int pipe_fd, int server_manager_socket);
+void    start_admin_server(struct sockaddr_storage *addr, in_port_t port);
+void    handle_prompt(char **address, char **port_str);
+int     handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage *addr, in_port_t port);
+ssize_t read_from_pipe(int pipe_fd, int server_manager_socket);
 
 // GroupChat Methods
 void *handle_client(const void *arg);
-void  start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd);
+void  start_groupChat_server(struct sockaddr_storage *addr, in_port_t port, int sm_socket, int pipe_write_fd);
 void  free_usernames(void);
 //  void         print_users(void);
 void handle_message(const char *buffer, int sender_fd);
@@ -62,10 +62,10 @@ void direct_message(int sender_fd, const char *buffer);
 #define OPTION_WITH_SM "Listen for SERVER MANAGER"
 #define INCORRECT_PASSKEY_MSG "Incorrect passkey. Attempts remaining: %d\n"
 #define AUTH_FAILED_MSG "Passkey authentication failed. Closing connection.\n"
-#define PASSKEY_MATCHED_MSG "ACCEPTED"
+#define PASSKEY_MATCHED_MSG "ACCEPTED\n"
 #define WELCOME_SERVER_MSG "Welcome Server Manager\n </s> Would you like to start group chat server \n </q>Would you like to stop group chat server\n"
-#define STARTING_SERVER_MSG "STARTED"
-#define STOPPING_SERVER_MSG "STOPPED"
+#define STARTING_SERVER_MSG "STARTED\n"
+#define STOPPING_SERVER_MSG "STOPPED\n"
 
 #define MAX_INPUT_LENGTH 256
 

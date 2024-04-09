@@ -47,7 +47,7 @@ void *handle_client(const void *arg)
     pthread_exit(NULL);
 }
 
-void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm_socket, int pipe_write_fd)
+void start_groupChat_server(struct sockaddr_storage *addr, in_port_t port, int sm_socket, int pipe_write_fd)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -55,8 +55,8 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
     pthread_t               tid;
     uint8_t                 version = PROTOCOL_VERSION;
 
-    server_socket = socket_create(addr.ss_family, SOCK_STREAM, 0);
-    socket_bind(server_socket, &addr, port);
+    server_socket = socket_create(addr->ss_family, SOCK_STREAM, 0);
+    socket_bind(server_socket, addr, port);
     start_listening(server_socket, BASE_TEN);
     group_chat_setup_signal_handler();
 
@@ -81,6 +81,7 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
         FD_SET(server_socket, &readfds);
         FD_SET(STDIN_FILENO, &readfds);
         FD_SET(sm_socket, &readfds);
+        FD_SET(pipe_write_fd, &readfds);
         max_sd = server_socket;
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {
@@ -146,8 +147,18 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
                 continue;    // Continue listening for connections
             }
 
-            printf("New connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
+            printf("\nNew connection from %s:%d, assigned to Client%d\n", inet_ntoa(((struct sockaddr_in *)&client_addr)->sin_addr), ntohs(((struct sockaddr_in *)&client_addr)->sin_port), client_index + 1);
             printf("Population: %d/%d\n", client_count, MAX_CLIENTS);
+
+            // Send the updated client count to the admin server
+            bytes_written = write(pipe_write_fd, &client_count, sizeof(client_count));
+
+            if(bytes_written != sizeof(client_count))
+            {
+                perror("Failed to write client count to pipe");
+            }
+            printf("client count sending to wrapper: %d\n", client_count);
+
             fflush(stdout);
 
             clients[client_index].client_socket = client_socket;
@@ -188,14 +199,6 @@ void start_groupChat_server(struct sockaddr_storage addr, in_port_t port, int sm
                 close(client_socket);
                 return;
             }
-
-            // Send the updated client count to the admin server
-            bytes_written = write(pipe_write_fd, &client_count, sizeof(client_count));
-            if(bytes_written != sizeof(client_count))
-            {
-                perror("Failed to write client count to pipe");
-            }
-            printf("client count from gc server:%d", client_count);
 
             // Create a new thread to handle the client
             client_info = &clients[client_index];    // Pass the address of the struct in the array

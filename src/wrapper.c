@@ -29,7 +29,7 @@ int main(void)
             handle_prompt(&address, &port_str);
             handle_arguments(address, port_str, &port);
             convert_address(address, &addr);
-            start_groupChat_server(addr, port, 0, 0);
+            start_groupChat_server(&addr, port, 0, 0);
 
             free(address);
             free(port_str);
@@ -39,7 +39,7 @@ int main(void)
             handle_prompt(&address, &port_str);
             handle_arguments(address, port_str, &port);
             convert_address(address, &addr);
-            start_admin_server(addr, port);
+            start_admin_server(&addr, port);
 
             free(address);
             free(port_str);
@@ -52,7 +52,7 @@ int main(void)
     return 0;
 }
 
-void start_admin_server(struct sockaddr_storage addr, in_port_t port)
+void start_admin_server(struct sockaddr_storage *addr, in_port_t port)
 {
     int                     server_socket;
     struct sockaddr_storage client_addr;
@@ -62,14 +62,14 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     int                     pipe_fds[2];
     int                     server_manager_socket = 0;
 
-    server_socket = socket_create(addr.ss_family, SOCK_STREAM, 0);
-    socket_bind(server_socket, &addr, port);
+    server_socket = socket_create(addr->ss_family, SOCK_STREAM, 0);
+    socket_bind(server_socket, addr, port);
     start_listening(server_socket, BASE_TEN);
     admin_setup_signal_handler();
 
     // Create a pipe for communication between the admin server and the group chat server
     if(pipe2(pipe_fds, O_CLOEXEC) == -1)    // use incase D'Arcy template
-                                            //    if(pipe(pipe_fds) == -1) // use incase gcc
+    //    if(pipe(pipe_fds) == -1) // use incase gcc
     {
         perror("pipe");
         exit(EXIT_FAILURE);
@@ -78,7 +78,7 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
     // Initialize the set of active sockets
     FD_ZERO(&readfds);
     FD_SET(server_socket, &readfds);
-    FD_SET(pipe_fds[0], &readfds);    // Add the read end of the pipe to the set
+    FD_SET(pipe_fds[0], &readfds);
     max_sd = server_socket > pipe_fds[0] ? server_socket : pipe_fds[0];
 
     while(!admin_exit_flag)
@@ -111,7 +111,9 @@ void start_admin_server(struct sockaddr_storage addr, in_port_t port)
         // Check if there is data to read from the pipe
         if(FD_ISSET(pipe_fds[0], &readfds))
         {
-            read_from_pipe(pipe_fds[0], server_manager_socket);    // Read messages from the child process
+            ssize_t read;
+            read = read_from_pipe(pipe_fds[0], server_manager_socket);    // Read messages from the child process
+            printf("val %zd", read);
         }
 
         // Update the set of active sockets for the next iteration
@@ -144,7 +146,7 @@ void handle_prompt(char **address, char **port_str)
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("192.168.0.247");
+        *address = strdup("127.0.0.1");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -193,7 +195,7 @@ void admin_sigint_handler(int signum)
     admin_exit_flag = 1;
 }
 
-int handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage addr, in_port_t port)
+int handle_new_server_manager(int server_socket, struct sockaddr_storage *client_addr, socklen_t *client_addr_len, const int pipe_fds[2], struct sockaddr_storage *addr, in_port_t port)
 {
     char    passkey_buffer[TWO_FIFTY_SIX];
     int     attempts        = 0;
@@ -202,6 +204,9 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     pid_t   pid             = 0;
     uint8_t version         = PROTOCOL_VERSION;
     char    msg[BUFFER_SIZE];
+    fd_set  readfds;
+    int     max_sd;
+
     if(sm_socket < 0)
     {
         perror("accept");
@@ -253,58 +258,91 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
         close(sm_socket);
         return -1;
     }
+    // this uses magic to do its thang
+    max_sd = sm_socket > pipe_fds[0] ? sm_socket : pipe_fds[0];
 
     // Listen for commands to start or stop the group chat server
     while(1)
     {
-        char    command_buffer[BUFFER_SIZE];
-        uint8_t command_version;
-        ssize_t command_received;
+        FD_ZERO(&readfds);
+        FD_SET(sm_socket, &readfds);
+        FD_SET(pipe_fds[0], &readfds);
 
-        // Read the command with protocol
-        command_received = read_with_protocol(sm_socket, &command_version, command_buffer, BUFFER_SIZE);
-
-        if(command_received <= 0)
+        if(select(max_sd + 1, &readfds, NULL, NULL, NULL) < 0)
         {
-            printf("Connection closed or error occurred.\n");
+            if(errno == EINTR)
+            {
+                continue;    // Interrupted by signal, continue the loop
+            }
+            perror("select");
             break;
         }
 
-        if((strcmp(command_buffer, "/s") == 0 && pid == 0) || (strcmp(command_buffer, "/s\n") == 0 && pid == 0))    // Start the server
+        // Handle commands from the server manager
+        if(FD_ISSET(sm_socket, &readfds))
         {
-            send_with_protocol(sm_socket, version, STARTING_SERVER_MSG);
-            pid = fork();
-            if(pid == 0)
+            char    command_buffer[BUFFER_SIZE];
+            uint8_t command_version;
+            ssize_t command_received;
+            // Read the command with protocol
+            command_received = read_with_protocol(sm_socket, &command_version, command_buffer, BUFFER_SIZE);
+
+            if(command_received <= 0)
             {
-                close(pipe_fds[0]);
-                start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
-                close(pipe_fds[1]);
-                exit(EXIT_SUCCESS);
+                printf("Connection closed or error occurred.\n");
+                break;
             }
-            else if(pid > 0)
+
+            if((strcmp(command_buffer, "/s") == 0 && pid == 0) || (strcmp(command_buffer, "/s\n") == 0 && pid == 0))    // Start the server
             {
-                close(pipe_fds[1]);
-                printf("Group chat server started.\n");
+                send_with_protocol(sm_socket, version, STARTING_SERVER_MSG);
+                pid = fork();
+                if(pid == 0)
+                {
+                    //                if(freopen("/dev/null", "w", stdout) == NULL)
+                    //                {
+                    //                    perror("Failed to redirect stdout to /dev/null");
+                    //                    exit(EXIT_FAILURE);
+                    //                }
+                    close(pipe_fds[0]);
+                    start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
+                    close(pipe_fds[1]);
+                    exit(EXIT_SUCCESS);
+                }
+                else if(pid > 0)
+                {
+                    close(pipe_fds[1]);
+                    printf("Group chat server started.\n");
+                }
+                else
+                {
+                    perror("Failed to start group chat server");
+                }
+            }
+            else if((strcmp(command_buffer, "/q") == 0 && pid > 0) || (strcmp(command_buffer, "/q\n") == 0 && pid > 0))    // Stop the server
+            {
+                kill(pid, SIGTERM);
+                waitpid(pid, NULL, 0);
+                pid = 0;
+                printf(STOPPING_SERVER_MSG);
+                if(send_with_protocol(sm_socket, version, STOPPING_SERVER_MSG) == -1)
+                {
+                    perror("Error sending stop server message with protocol");
+                }
             }
             else
             {
-                perror("Failed to start group chat server");
+                printf("Unknown command: %s\n", command_buffer);
             }
         }
-        else if((strcmp(command_buffer, "/q") == 0 && pid > 0) || (strcmp(command_buffer, "/q\n") == 0 && pid > 0))    // Stop the server
+
+        if(FD_ISSET(pipe_fds[0], &readfds))
         {
-            kill(pid, SIGTERM);
-            waitpid(pid, NULL, 0);
-            pid = 0;
-            printf(STOPPING_SERVER_MSG);
-            if(send_with_protocol(sm_socket, version, STOPPING_SERVER_MSG) == -1)
+            ssize_t read_result = read_from_pipe(pipe_fds[0], sm_socket);
+            if(read_result <= 0)
             {
-                perror("Error sending stop server message with protocol");
+                break;    // Break the loop if there's an error or the pipe is closed
             }
-        }
-        else
-        {
-            printf("Unknown command: %s\n", command_buffer);
         }
     }
 
@@ -318,7 +356,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     return sm_socket;
 }
 
-void read_from_pipe(int pipe_fd, int server_manager_socket)
+ssize_t read_from_pipe(int pipe_fd, int server_manager_socket)
 {
     int     received_client_count;
     ssize_t bytes_read;
@@ -328,11 +366,10 @@ void read_from_pipe(int pipe_fd, int server_manager_socket)
 
     if(bytes_read > 0)
     {
-        uint8_t version = PROTOCOL_VERSION;
-        char    count_str[BUFFER_SIZE];
+        uint8_t version                = PROTOCOL_VERSION;
+        char    count_str[BUFFER_SIZE] = {0};
 
         snprintf(count_str, BUFFER_SIZE, "%d", received_client_count);
-        printf("Received client count from group chat server: %s\n", count_str);
 
         // Send this information to the server manager with protocol
         if(send_with_protocol(server_manager_socket, version, count_str) == -1)
@@ -348,4 +385,5 @@ void read_from_pipe(int pipe_fd, int server_manager_socket)
     {
         perror("Failed to read from pipe");
     }
+    return bytes_read;
 }
