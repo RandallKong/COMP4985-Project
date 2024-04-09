@@ -9,7 +9,7 @@ ssize_t send_byte(int sockfd, uint8_t byte)
 // Function to send a 16-bit integer in network byte order
 ssize_t send_uint16(int sockfd, uint16_t value)
 {
-//    uint16_t net_value = htons(value);    // Convert to network byte order
+    //    uint16_t net_value = htons(value);    // Convert to network byte order
     uint16_t net_value = ntohs(value);    // Convert to network byte order
     return send(sockfd, &net_value, sizeof(net_value), 0);
 }

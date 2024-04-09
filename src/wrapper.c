@@ -108,14 +108,6 @@ void start_admin_server(struct sockaddr_storage *addr, in_port_t port)
             }
         }
 
-        // Check if there is data to read from the pipe
-        if(FD_ISSET(pipe_fds[0], &readfds))
-        {
-            ssize_t read;
-            read = read_from_pipe(pipe_fds[0], server_manager_socket);    // Read messages from the child process
-            printf("val %zd", read);
-        }
-
         // Update the set of active sockets for the next iteration
         FD_ZERO(&readfds);
         FD_SET(server_socket, &readfds);
@@ -128,7 +120,6 @@ void start_admin_server(struct sockaddr_storage *addr, in_port_t port)
 
     // Close the server socket and clean up
     close(server_socket);
-    close(pipe_fds[0]);    // Close the read end of the pipe
     if(server_manager_socket > 0)
     {
         close(server_manager_socket);    // Close the server manager socket if it's still open
@@ -146,7 +137,7 @@ void handle_prompt(char **address, char **port_str)
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("127.0.0.1");
+        *address = strdup("192.168.1.73");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -206,6 +197,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
     char    msg[BUFFER_SIZE];
     fd_set  readfds;
     int     max_sd;
+    int     server_running = 0;
 
     if(sm_socket < 0)
     {
@@ -274,7 +266,6 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
             {
                 continue;    // Interrupted by signal, continue the loop
             }
-            perror("select");
             break;
         }
 
@@ -299,11 +290,6 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 pid = fork();
                 if(pid == 0)
                 {
-                    //                if(freopen("/dev/null", "w", stdout) == NULL)
-                    //                {
-                    //                    perror("Failed to redirect stdout to /dev/null");
-                    //                    exit(EXIT_FAILURE);
-                    //                }
                     close(pipe_fds[0]);
                     start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
                     close(pipe_fds[1]);
@@ -318,6 +304,8 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 {
                     perror("Failed to start group chat server");
                 }
+                // turns on the read from pipe
+                server_running = 1;
             }
             else if((strcmp(command_buffer, "/q") == 0 && pid > 0) || (strcmp(command_buffer, "/q\n") == 0 && pid > 0))    // Stop the server
             {
@@ -329,6 +317,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 {
                     perror("Error sending stop server message with protocol");
                 }
+                server_running = 0;
             }
             else
             {
@@ -336,13 +325,13 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
             }
         }
 
-        if(FD_ISSET(pipe_fds[0], &readfds))
+        if(FD_ISSET(pipe_fds[0], &readfds) && server_running)
         {
-            ssize_t read_result = read_from_pipe(pipe_fds[0], sm_socket);
-            if(read_result <= 0)
-            {
-                break;    // Break the loop if there's an error or the pipe is closed
-            }
+            read_from_pipe(pipe_fds[0], sm_socket);
+            //            if(read_result <= 0)
+            //            {
+            //                break;    // Break the loop if there's an error or the pipe is closed
+            //            }
         }
     }
 
@@ -352,7 +341,7 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
         kill(pid, SIGTERM);
         waitpid(pid, NULL, 0);
     }
-    close(sm_socket);
+    //    close(sm_socket);
     return sm_socket;
 }
 
