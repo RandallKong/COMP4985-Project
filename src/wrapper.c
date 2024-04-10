@@ -137,7 +137,8 @@ void handle_prompt(char **address, char **port_str)
     if(strlen(*address) == 0)
     {
         free(*address);
-        *address = strdup("192.168.1.73");
+        //        *address = strdup("192.168.0.247");
+        *address = strdup("127.0.0.1");
         printf("No input detected. Defaulting to IP address: %s\n", *address);
     }
 
@@ -358,7 +359,7 @@ ssize_t read_from_pipe(int pipe_fd, int server_manager_socket)
         uint8_t version                = PROTOCOL_VERSION;
         char    count_str[BUFFER_SIZE] = {0};
 
-        snprintf(count_str, BUFFER_SIZE, "%d", received_client_count);
+        snprintf(count_str, BUFFER_SIZE, "/d %d", received_client_count);
 
         // Send this information to the server manager with protocol
         if(send_with_protocol(server_manager_socket, version, count_str) == -1)
