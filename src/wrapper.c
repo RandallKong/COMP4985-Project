@@ -139,7 +139,7 @@ void handle_prompt(char **address, char **port_str)
         free(*address);
         //        *address = strdup("192.168.0.247");
         *address = strdup("127.0.0.1");
-        printf("No input detected. Defaulting to IP address: %s\n", *address);
+        printf("No input det~ected. Defaulting to IP address: %s\n", *address);
     }
 
     printf("\nEnter the port to bind the server (default 8080): ");
@@ -293,12 +293,12 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
                 {
                     close(pipe_fds[0]);
                     start_groupChat_server(addr, port + 1, sm_socket, pipe_fds[1]);
-                    close(pipe_fds[1]);
-                    exit(EXIT_SUCCESS);
+                    //                    close(pipe_fds[1]);
+                    //                    exit(EXIT_SUCCESS);
                 }
                 else if(pid > 0)
                 {
-                    close(pipe_fds[1]);
+                    //                    close(pipe_fds[1]);
                     printf("Group chat server started.\n");
                 }
                 else
@@ -326,13 +326,10 @@ int handle_new_server_manager(int server_socket, struct sockaddr_storage *client
             }
         }
 
-        if(FD_ISSET(pipe_fds[0], &readfds) && server_running)
+        if(FD_ISSET(pipe_fds[0], &readfds) && server_running == 1)
         {
+            printf("is server running:%d", server_running);
             read_from_pipe(pipe_fds[0], sm_socket);
-            //            if(read_result <= 0)
-            //            {
-            //                break;    // Break the loop if there's an error or the pipe is closed
-            //            }
         }
     }
 
