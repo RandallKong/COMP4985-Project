@@ -1,11 +1,11 @@
-# COMP4985-Project
+# Group Chat Applicaiton in C
 
 By:   Randall Kong, Roy Xavier Pimentel
 Role: Team 3 - Server
 
 Extended Version: https://github.com/XavierPim/Multi-Client_Chat_Server_IPv4_6
 
-# Iso Instructions:
+# Setup Instructions:
 1) ./generate-flags.sh
 2) ./generate-cmakelists.sh
 3) ./change-compiler.sh -c [gcc or clang]
